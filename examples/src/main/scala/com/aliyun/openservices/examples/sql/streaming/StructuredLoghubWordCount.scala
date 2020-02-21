@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.aliyun.emr.examples.sql.streaming
+package com.aliyun.openservices.examples.sql.streaming
 
 import java.util.UUID
 

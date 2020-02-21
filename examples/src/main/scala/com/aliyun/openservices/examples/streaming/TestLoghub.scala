@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.aliyun.emr.examples.streaming
+package com.aliyun.openservices.examples.streaming
 
 import org.apache.spark.SparkConf
 import org.apache.spark.storage.StorageLevel
