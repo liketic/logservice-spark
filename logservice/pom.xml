@@ -204,10 +204,9 @@
                 <artifactId>maven-shade-plugin</artifactId>
                 <configuration>
                     <shadedArtifactAttached>false</shadedArtifactAttached>
-                    <outputFile>${project.build.directory}/shaded/emr-logservice_shaded_${scala.binary.version}-${project.version}.jar</outputFile>
+                    <outputFile>${project.build.directory}/shaded/logservice_shaded_${scala.binary.version}-${project.version}.jar</outputFile>
                     <artifactSet>
                         <includes>
-                            <include>com.aliyun.emr:emr-common_2.11</include>
                             <include>com.aliyun.openservices:aliyun-log</include>
                             <include>com.aliyun.openservices:loghub-client-lib</include>
                             <include>com.aliyun.openservices:aliyun-log-producer</include>
