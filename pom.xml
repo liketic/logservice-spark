@@ -95,7 +95,6 @@
                 </exclusions>
                 <scope>provided</scope>
             </dependency>
-
             <dependency>
                 <groupId>org.apache.spark</groupId>
                 <artifactId>spark-core_${scala.binary.version}</artifactId>
@@ -103,20 +102,17 @@
                 <scope>test</scope>
                 <type>test-jar</type>
             </dependency>
-
             <dependency>
                 <groupId>org.apache.spark</groupId>
                 <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
                 <version>${spark.version}</version>
             </dependency>
-
             <dependency>
                 <groupId>org.apache.spark</groupId>
                 <artifactId>spark-sql_${scala.binary.version}</artifactId>
                 <version>${spark.version}</version>
                 <scope>provided</scope>
             </dependency>
-
             <dependency>
                 <groupId>org.apache.spark</groupId>
                 <artifactId>spark-sql_${scala.binary.version}</artifactId>
@@ -124,7 +120,6 @@
                 <type>test-jar</type>
                 <scope>test</scope>
             </dependency>
-
             <dependency>
                 <groupId>org.apache.spark</groupId>
                 <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
@@ -132,7 +127,6 @@
                 <type>test-jar</type>
                 <scope>test</scope>
             </dependency>
-
             <dependency>
                 <groupId>org.apache.spark</groupId>
                 <artifactId>spark-streaming_${scala.binary.version}</artifactId>
@@ -189,35 +183,30 @@
                     </exclusion>
                 </exclusions>
             </dependency>
-
             <dependency>
                 <groupId>org.apache.hadoop</groupId>
                 <artifactId>hadoop-common</artifactId>
                 <version>${hadoop.version}</version>
                 <scope>provided</scope>
             </dependency>
-
             <dependency>
                 <groupId>org.apache.hadoop</groupId>
                 <artifactId>hadoop-client</artifactId>
                 <version>${hadoop.version}</version>
                 <scope>provided</scope>
             </dependency>
-
             <dependency>
                 <groupId>org.apache.hadoop</groupId>
                 <artifactId>hadoop-auth</artifactId>
                 <version>${hadoop.version}</version>
                 <scope>provided</scope>
             </dependency>
-
             <dependency>
                 <groupId>org.apache.hadoop</groupId>
                 <artifactId>hadoop-annotations</artifactId>
                 <version>${hadoop.version}</version>
                 <scope>provided</scope>
             </dependency>
-
             <dependency>
                 <groupId>org.apache.hive</groupId>
                 <artifactId>hive-serde</artifactId>
@@ -229,14 +218,12 @@
                 <version>${scalatest.version}</version>
                 <scope>test</scope>
             </dependency>
-
             <dependency>
                 <groupId>junit</groupId>
                 <artifactId>junit</artifactId>
                 <version>${junit.version}</version>
                 <scope>test</scope>
             </dependency>
-
             <!-- mock -->
             <dependency>
                 <groupId>org.easymock</groupId>
@@ -244,51 +231,28 @@
                 <version>${easymock.version}</version>
                 <scope>test</scope>
             </dependency>
-
             <dependency>
                 <groupId>org.mockito</groupId>
                 <artifactId>mockito-all</artifactId>
                 <version>${mockito.version}</version>
                 <scope>test</scope>
             </dependency>
-
             <dependency>
                 <groupId>org.mockito</groupId>
                 <artifactId>mockito-core</artifactId>
                 <version>${mockito.version}</version>
                 <scope>test</scope>
             </dependency>
-
-            <dependency>
-                <groupId>com.google.guava</groupId>
-                <artifactId>guava</artifactId>
-                <version>${guava.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>com.google.code.gson</groupId>
-                <artifactId>gson</artifactId>
-                <version>${gson.version}</version>
-            </dependency>
-
             <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-lang3</artifactId>
                 <version>${commons.lang3.version}</version>
             </dependency>
-
-            <dependency>
-                <groupId>com.squareup.okhttp3</groupId>
-                <artifactId>okhttp</artifactId>
-                <version>${okhttp3.version}</version>
-            </dependency>
-
             <dependency>
                 <groupId>com.101tec</groupId>
                 <artifactId>zkclient</artifactId>
                 <version>${zkclient.version}</version>
             </dependency>
-
             <dependency>
                 <groupId>org.apache.hadoop</groupId>
                 <artifactId>hadoop-common</artifactId>
@@ -323,16 +287,6 @@
                 <scope>test</scope>
             </dependency>
             <dependency>
-                <groupId>org.apache.kafka</groupId>
-                <artifactId>kafka_2.10</artifactId>
-                <version>${kafka.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.kafka</groupId>
-                <artifactId>kafka-tools</artifactId>
-                <version>${kafka.version}</version>
-            </dependency>
-            <dependency>
                 <groupId>com.yammer.metrics</groupId>
                 <artifactId>metrics-ganglia</artifactId>
                 <version>${yammer.metrics.version}</version>
@@ -346,11 +300,6 @@
                 <groupId>com.yammer.metrics</groupId>
                 <artifactId>metrics-annotation</artifactId>
                 <version>${yammer.metrics.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.aliyun.datahub</groupId>
-                <artifactId>aliyun-sdk-datahub</artifactId>
-                <version>${datahub.verion}</version>
             </dependency>
             <dependency>
                 <groupId>com.google.protobuf</groupId>
@@ -608,11 +557,11 @@
     </profiles>
     <distributionManagement>
         <snapshotRepository>
-            <id>oss</id>
+            <id>sonatype-nexus-snapshots</id>
             <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
         </snapshotRepository>
         <repository>
-            <id>oss</id>
+            <id>sonatype-nexus-staging</id>
             <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
         </repository>
     </distributionManagement>
