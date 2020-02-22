@@ -17,13 +17,6 @@
 package org.apache.spark.streaming.aliyun.logservice
 
 /**
- * Loghub offset.
- * @param shardId Loghub shard id.
- * @param timestamp The offfset of each loghub shard.
- */
-case class LoghubOffset(shardId: Int, timestamp: Long)
-
-/**
  * Loghub offset range.
  * @param shardId Loghub shard id.
  * @param beginCursor The start cursor of range.
