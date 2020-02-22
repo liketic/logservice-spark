@@ -13,7 +13,7 @@
 
     <artifactId>examples</artifactId>
     <packaging>jar</packaging>
-    <name>Spark Streaming for Alibaba Log Service Examples</name>
+    <name>Spark Connector for Alibaba Log Service Examples</name>
 
     <properties>
         <guava.version>27.0-jre</guava.version>

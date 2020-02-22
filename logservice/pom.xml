@@ -12,7 +12,7 @@
 
     <artifactId>logservice-spark-connector_${scala.binary.version}</artifactId>
     <packaging>jar</packaging>
-    <name>Spark Streaming for Alibaba Log Service</name>
+    <name>Spark Connector for Alibaba Log Service</name>
 
     <properties>
         <guava.version>27.0-jre</guava.version>
