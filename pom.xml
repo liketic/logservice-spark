@@ -4,7 +4,7 @@
 
     <groupId>com.aliyun.openservices</groupId>
     <artifactId>logservice-spark-connector-parent</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
 
     <packaging>pom</packaging>
     <name>Spark Connector for Alibaba Log Service Parent</name>
@@ -45,11 +45,9 @@
         <easymock.version>3.2</easymock.version>
         <mockito.version>1.10.19</mockito.version>
         <gson.version>2.8.2</gson.version>
-        <dropwizard.metrics.version>3.1.0</dropwizard.metrics.version>
         <zkclient.version>0.10</zkclient.version>
         <zookeeper.version>3.4.10</zookeeper.version>
         <commons.lang3.version>3.3.2</commons.lang3.version>
-        <yammer.metrics.version>2.2.0</yammer.metrics.version>
         <avro.version>1.8.2</avro.version>
         <protobuf.version>2.5.0</protobuf.version>
         <phoenix.version>5.0.0-HBase-2.0</phoenix.version>
@@ -135,11 +133,6 @@
                 <artifactId>spark-mllib_${scala.binary.version}</artifactId>
                 <version>${spark.version}</version>
                 <scope>provided</scope>
-            </dependency>
-            <dependency>
-                <groupId>io.dropwizard.metrics</groupId>
-                <artifactId>metrics-core</artifactId>
-                <version>${dropwizard.metrics.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.alibaba</groupId>
@@ -557,26 +550,6 @@
         </repository>
     </distributionManagement>
     <repositories>
-        <repository>
-            <id>central</id>
-            <url>http://maven.aliyun.com/mvn/repository</url>
-            <releases>
-                <enabled>true</enabled>
-            </releases>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </repository>
-        <repository>
-            <id>snapshots</id>
-            <url>http://maven.aliyun.com/mvn/repository</url>
-            <releases>
-                <enabled>false</enabled>
-            </releases>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-        </repository>
         <repository>
             <id>confluent</id>
             <name>Confluent</name>
