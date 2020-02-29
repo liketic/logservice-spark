@@ -18,7 +18,6 @@ package org.apache.spark.streaming.aliyun.logservice
 
 import java.{util => ju}
 
-// scalastyle:on
 import com.aliyun.openservices.log.common.Consts.CursorMode
 import com.aliyun.openservices.log.common.ConsumerGroup
 import com.aliyun.openservices.log.exception.LogException
@@ -36,12 +35,10 @@ import org.apache.spark.streaming.{StreamingContext, Time}
 import org.apache.spark.streaming.dstream.{DStreamCheckpointData, InputDStream}
 import org.apache.spark.streaming.scheduler.StreamInputInfo
 
-// scalastyle:off
 import scala.collection.JavaConversions._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-// scalastyle:off
 class DirectLoghubInputDStream(
     _ssc: StreamingContext,
     project: String,
@@ -55,11 +52,11 @@ class DirectLoghubInputDStream(
     cursorStartTime: Long = -1L)
   extends InputDStream[String](_ssc) with Logging with CanCommitOffsets {
   @transient private var zkHelper: ZkHelper = _
-  @transient private var loghubClient: LoghubClientAgent = null
+  @transient private var loghubClient: LoghubClientAgent = _
 
   private val enablePreciseCount: Boolean =
-    _ssc.sparkContext.getConf.getBoolean("spark.streaming.loghub.count.precise.enable", true)
-  private var checkpointDir: String = null
+    _ssc.sparkContext.getConf.getBoolean("spark.streaming.loghub.count.precise.enable", defaultValue = true)
+  private var checkpointDir: String = _
   private val readOnlyShardCache = new mutable.HashMap[Int, String]()
   private val readOnlyShardEndCursorCache = new mutable.HashMap[Int, String]()
   private var savedCheckpoints: mutable.Map[Int, String] = _

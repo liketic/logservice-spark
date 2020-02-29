@@ -20,7 +20,6 @@ import java.util.concurrent.LinkedBlockingQueue
 
 import com.alibaba.fastjson.JSONObject
 import com.aliyun.openservices.log.response.BatchGetLogResponse
-import com.aliyun.openservices.log.util.NetworkUtils
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.aliyun.logservice.LoghubSourceProvider._
@@ -28,18 +27,17 @@ import org.apache.spark.util.NextIterator
 
 import scala.collection.JavaConversions._
 
-class LoghubIterator(
-                      zkHelper: ZkHelper,
-                      client: LoghubClientAgent,
-                      project: String,
-                      logStore: String,
-                      consumerGroup: String,
-                      shardId: Int,
-                      startCursor: String,
-                      count: Int,
-                      context: TaskContext,
-                      commitBeforeNext: Boolean = true,
-                      logGroupStep: Int = 100)
+class LoghubIterator(zkHelper: ZkHelper,
+                     client: LoghubClientAgent,
+                     project: String,
+                     logStore: String,
+                     consumerGroup: String,
+                     shardId: Int,
+                     startCursor: String,
+                     count: Int,
+                     context: TaskContext,
+                     commitBeforeNext: Boolean = true,
+                     logGroupStep: Int = 100)
   extends NextIterator[String] with Logging {
 
   private var hasRead: Int = 0
@@ -48,7 +46,6 @@ class LoghubIterator(
   private var shardEndNotReached: Boolean = true
   private var committed: Boolean = false
   private var unlocked: Boolean = false
-  private val ipAddr = NetworkUtils.getLocalMachineIP
 
   val inputMetrics = context.taskMetrics.inputMetrics
 
@@ -73,7 +70,7 @@ class LoghubIterator(
       finished = true
       zkHelper.saveOffset(shardId, nextCursor)
       unlock()
-      logInfo(s"unlock shard $shardId $ipAddr")
+      logDebug(s"unlock shard $shardId")
       null
     } else {
       hasRead += 1
@@ -135,7 +132,7 @@ class LoghubIterator(
     val currentCursor = nextCursor
     nextCursor = batchGetLogRes.GetNextCursor()
     if (currentCursor.equals(nextCursor)) {
-      logDebug(s"No data at cursor $currentCursor in shard $shardId $ipAddr")
+      logDebug(s"No data at cursor $currentCursor in shard $shardId")
       shardEndNotReached = false
     }
     logDebug(s"shardId: $shardId, currentCursor: $currentCursor, nextCursor: $nextCursor," +
