@@ -26,6 +26,8 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.aliyun.logservice.LoghubSourceProvider._
 import org.apache.spark.util.NextIterator
 
+import scala.collection.JavaConversions._
+
 class LoghubIterator(
                       zkHelper: ZkHelper,
                       client: LoghubClientAgent,
@@ -102,11 +104,7 @@ class LoghubIterator(
   }
 
   def fetchNextBatch(): Unit = {
-    // scalastyle:off
-    import scala.collection.JavaConversions._
-    // scalastyle:on
     commitIfNeeded()
-    logInfo(s"Fetch $shardId at $nextCursor $ipAddr")
     val batchGetLogRes: BatchGetLogResponse =
       client.BatchGetLog(project, logStore, shardId, logGroupStep, nextCursor)
     var count = 0
@@ -137,10 +135,10 @@ class LoghubIterator(
     val currentCursor = nextCursor
     nextCursor = batchGetLogRes.GetNextCursor()
     if (currentCursor.equals(nextCursor)) {
-      logInfo(s"No data at cursor $currentCursor in shard $shardId $ipAddr")
+      logDebug(s"No data at cursor $currentCursor in shard $shardId $ipAddr")
       shardEndNotReached = false
     }
-    logInfo(s"shardId: $shardId, currentCursor: $currentCursor, nextCursor: $nextCursor," +
+    logDebug(s"shardId: $shardId, currentCursor: $currentCursor, nextCursor: $nextCursor," +
       s" hasRead: $hasRead, count: $count," +
       s" get: $count, queue: ${logData.size()}")
   }
