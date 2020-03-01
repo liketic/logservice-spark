@@ -16,15 +16,27 @@
  */
 package org.apache.spark.streaming.aliyun.logservice
 
-import org.apache.spark.annotation.Experimental
+import scala.collection.mutable.ArrayBuffer
 
-@Experimental
+
+/**
+ * Loghub offset range.
+ *
+ * @param shardId     Loghub shard id.
+ * @param fromCursor  The start cursor of range.
+ * @param untilCursor The end cursor of range which may be null.
+ */
+case class OffsetRange(shardId: Int, fromCursor: String, untilCursor: String)
+
+
+trait HasOffsetRanges {
+  def offsetRanges: Array[OffsetRange]
+}
+
 trait CanCommitOffsets {
   /**
-   *  :: Experimental ::
    * Queue up offset ranges for commit to Loghub at a future time.  Threadsafe.
    * This is only needed if you intend to store offsets in Loghub, instead of your own store.
    */
-  @Experimental
-  def commitAsync(): Unit
+  def commitAsync(offsets: Array[OffsetRange]): Unit
 }

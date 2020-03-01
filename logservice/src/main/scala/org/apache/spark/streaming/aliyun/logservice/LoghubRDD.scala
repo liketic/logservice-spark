@@ -16,8 +16,6 @@
  */
 package org.apache.spark.streaming.aliyun.logservice
 
-import scala.collection.mutable.ArrayBuffer
-
 import com.aliyun.openservices.log.common.Consts.CursorMode
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
@@ -25,19 +23,17 @@ import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 
-class LoghubRDD(
-    @transient sc: SparkContext,
-    project: String,
-    logStore: String,
-    consumerGroup: String,
-    accessKeyId: String,
-    accessKeySecret: String,
-    endpoint: String,
-    duration: Long,
-    zkParams: Map[String, String],
-    shardOffsets: ArrayBuffer[ShardOffsetRange],
-    checkpointDir: String,
-    commitBeforeNext: Boolean = true) extends RDD[String](sc, Nil) with Logging {
+class LoghubRDD(@transient sc: SparkContext,
+                val project: String,
+                val logStore: String,
+                val consumerGroup: String,
+                val accessKeyId: String,
+                val accessKeySecret: String,
+                val endpoint: String,
+                val duration: Long,
+                val zkParams: Map[String, String],
+                val offsetRanges: Array[OffsetRange],
+                val checkpointDir: String) extends RDD[String](sc, Nil) with Logging with HasOffsetRanges {
   @transient var client: LoghubClientAgent = _
   @transient var zkHelper: ZkHelper = _
   private val enablePreciseCount: Boolean =
@@ -53,9 +49,8 @@ class LoghubRDD(
       super.count()
     } else {
       try {
-        val numShards = shardOffsets.size
-        shardOffsets.map(shard => {
-          val from = client.GetCursorTime(project, logStore, shard.shardId, shard.beginCursor)
+        offsetRanges.map(shard => {
+          val from = client.GetCursorTime(project, logStore, shard.shardId, shard.fromCursor)
             .GetCursorTime()
           val endCursor =
             client.GetCursor(project, logStore, shard.shardId, CursorMode.END).GetCursor()
@@ -64,12 +59,12 @@ class LoghubRDD(
           val res = client.GetHistograms(project, logStore, from, to, "", "*")
           if (!res.IsCompleted()) {
             logWarning(s"Failed to get complete count for [$project]-[$logStore]-" +
-              s"[${shard.shardId}] from ${shard.beginCursor} to ${endCursor}, " +
+              s"[${shard.shardId}] from ${shard.fromCursor} to ${endCursor}, " +
               s"use ${res.GetTotalCount()} instead. " +
               s"This warning does not introduce any job failure, but may affect some information " +
               s"about this batch.")
           }
-          (res.GetTotalCount() * 1.0D) / numShards
+          (res.GetTotalCount() * 1.0D) / offsetRanges.length
         }).sum.toLong
       } catch {
         case e: Exception =>
@@ -88,7 +83,7 @@ class LoghubRDD(
     try {
       val loghubIterator = new LoghubIterator(zkHelper, client, project, logStore,
         consumerGroup, shardPartition.shardId, shardPartition.startCursor,
-        shardPartition.count.toInt, context, commitBeforeNext, shardPartition.logGroupStep)
+        shardPartition.count.toInt, context, shardPartition.logGroupStep)
       new InterruptibleIterator[String](context, loghubIterator)
     } catch {
       case _: Exception =>
@@ -100,30 +95,32 @@ class LoghubRDD(
     val rate = sc.getConf.get("spark.streaming.loghub.maxRatePerShard", "10000").toInt
     val logGroupStep = sc.getConf.get("spark.loghub.batchGet.step", "100").toInt
     val count = rate * duration / 1000
-    shardOffsets.zipWithIndex.map { case (p, idx) =>
+    offsetRanges.zipWithIndex.map { case (p, idx) =>
       new ShardPartition(id, idx, p.shardId, count, project, logStore, consumerGroup,
-        accessKeyId, accessKeySecret, endpoint, p.beginCursor, logGroupStep)
+        accessKeyId, accessKeySecret, endpoint, p.fromCursor, logGroupStep)
         .asInstanceOf[Partition]
-    }.toArray
+    }
   }
 
-  private class ShardPartition(
-      rddId: Int,
-      partitionId: Int,
-      val shardId: Int,
-      val count: Long,
-      project: String,
-      logStore: String,
-      consumerGroup: String,
-      accessKeyId: String,
-      accessKeySecret: String,
-      endpoint: String,
-      val startCursor: String,
-      val logGroupStep: Int = 100) extends Partition with Logging {
+  private class ShardPartition(rddId: Int,
+                               partitionId: Int,
+                               val shardId: Int,
+                               val count: Long,
+                               project: String,
+                               logStore: String,
+                               consumerGroup: String,
+                               accessKeyId: String,
+                               accessKeySecret: String,
+                               endpoint: String,
+                               val startCursor: String,
+                               val logGroupStep: Int = 100) extends Partition with Logging {
     override def hashCode(): Int = 41 * (41 + rddId) + shardId
+
     override def equals(other: Any): Boolean = super.equals(other)
+
     override def index: Int = partitionId
   }
+
 }
 
 object LoghubRDD extends Logging {

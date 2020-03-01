@@ -79,8 +79,8 @@ class DirectLoghubInputDStreamSuite extends SparkFunSuite {
       testUtils.accessKeyId,
       testUtils.accessKeySecret)
     stream.setClient(client)
-    stream.tryToCreateConsumerGroup()
-    assert(stream.getSavedCheckpoints.isEmpty)
+    var checkpoints = stream.createConsumerGroupOrGetCheckpoint()
+    assert(checkpoints.isEmpty)
     Thread.sleep(60000)
     testUtils.client.UpdateCheckPoint(testUtils.logProject,
       logstore,
@@ -92,8 +92,7 @@ class DirectLoghubInputDStreamSuite extends SparkFunSuite {
       cg,
       1,
       "MTU3NTUzMDgyMDA0MDk4NDQzOQ==")
-    stream.tryToCreateConsumerGroup()
-    val ckpts = stream.getSavedCheckpoints
+    val ckpts = stream.createConsumerGroupOrGetCheckpoint()
     assert(ckpts.size == 2)
     assert(ckpts.getOrElse(0, "").equals("MTU3NTUzMDgyMDAzOTA5Mjk0MQ=="))
     assert(ckpts.getOrElse(1, "").equals("MTU3NTUzMDgyMDA0MDk4NDQzOQ=="))
