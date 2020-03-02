@@ -233,10 +233,12 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
 
   def findCheckpointOrCursorForShard(shardId: Int,
                                      checkpoints: mutable.Map[Int, String]): String = {
-    val checkpoint = checkpoints.getOrElse(shardId, null)
-    if (checkpoint != null && !checkpoint.isEmpty) {
-      logInfo(s"Shard $shardId will start from checkpoint $checkpoint")
-      return checkpoint
+    if (checkpoints != null) {
+      val checkpoint = checkpoints.getOrElse(shardId, null)
+      if (checkpoint != null && !checkpoint.isEmpty) {
+        logInfo(s"Shard $shardId will start from checkpoint $checkpoint")
+        return checkpoint
+      }
     }
     val cursor = mode match {
       case LogHubCursorPosition.END_CURSOR =>
