@@ -16,10 +16,7 @@
  */
 package org.apache.spark.streaming.aliyun.logservice
 
-import java.nio.charset.StandardCharsets
-import java.util.Base64
-import java.util.concurrent.ConcurrentLinkedQueue
-import java.{util => ju}
+import java.util.concurrent.ThreadPoolExecutor
 
 import com.aliyun.openservices.log.common.Consts.CursorMode
 import com.aliyun.openservices.log.common.ConsumerGroup
@@ -31,9 +28,10 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
-import org.apache.spark.streaming.{StreamingContext, Time}
 import org.apache.spark.streaming.dstream.{DStreamCheckpointData, InputDStream}
 import org.apache.spark.streaming.scheduler.StreamInputInfo
+import org.apache.spark.streaming.{StreamingContext, Time}
+import org.apache.spark.util.ThreadUtils
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable
@@ -106,6 +104,9 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
       zkHelper.close()
       zkHelper = null
     }
+    if (pool != null) {
+      ThreadUtils.shutdown(pool)
+    }
   }
 
   private def offsetRangeFor(shardId: Int, isReadonly: Boolean): (String, String) = {
@@ -171,46 +172,28 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
     }
     val inputInfo = StreamInputInfo(id, rdd.count(), metadata)
     ssc.scheduler.inputInfoTracker.reportInfo(validTime, inputInfo)
-    commitAll()
     Some(rdd)
   }
 
-  protected val commitQueue = new ConcurrentLinkedQueue[OffsetRange]
+  @transient protected var pool: ThreadPoolExecutor = _
 
   /**
    * Commit the offsets to LogService at a future time. Threadsafe.
    * Users should call this method at end of each output operation.
    */
   override def commitAsync(offsetRanges: Array[OffsetRange]): Unit = {
-    commitQueue.addAll(ju.Arrays.asList(offsetRanges: _*))
-  }
-
-  private def compareOffset(first: String, second: String): Boolean = {
-    val decoder = Base64.getDecoder
-    val charset = StandardCharsets.UTF_8
-    val lhs = new String(decoder.decode(first.getBytes(charset)), charset)
-    val rhs = new String(decoder.decode(second.getBytes(charset)), charset)
-    lhs.toLong < rhs.toLong
-  }
-
-  protected def commitAll(): Unit = {
-    val m = new ju.HashMap[Int, String]()
-    var osr = commitQueue.poll()
-    while (null != osr) {
-      val tp = osr.shardId
-      val x = m.get(tp)
-      if (null == x || compareOffset(x, osr.fromCursor)) {
-        m.put(tp, osr.fromCursor)
-      }
-      osr = commitQueue.poll()
+    if (pool == null) {
+      pool = ThreadUtils.newDaemonCachedThreadPool("commit-pool", 16)
     }
-    if (!m.isEmpty) {
-      m.foreach(r => {
-        // Remove this once we don't need to rollback
-        zkHelper.saveLegacyOffset(r._1, r._2)
-        loghubClient.safeUpdateCheckpoint(project, logstore, consumerGroup, r._1, r._2)
+    offsetRanges.foreach(r => {
+      pool.submit(new Runnable {
+        override def run(): Unit = {
+          // Remove this once we don't need to rollback
+          zkHelper.saveLegacyOffset(r.shardId, r.fromCursor)
+          loghubClient.safeUpdateCheckpoint(project, logstore, consumerGroup, r.shardId, r.fromCursor)
+        }
       })
-    }
+    })
   }
 
   private[streaming] override def name: String = s"Loghub direct stream [$id]"

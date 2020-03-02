@@ -16,19 +16,14 @@
  */
 package org.apache.spark.streaming.aliyun.logservice
 
-// scalastyle:off
-
 import java.nio.charset.StandardCharsets
 
-import scala.collection.JavaConversions._
-
-// scalastyle:on
 import org.I0Itec.zkclient.ZkClient
-import org.I0Itec.zkclient.exception.ZkNodeExistsException
-import org.I0Itec.zkclient.exception.ZkNoNodeException
+import org.I0Itec.zkclient.exception.{ZkNoNodeException, ZkNodeExistsException}
 import org.I0Itec.zkclient.serialize.ZkSerializer
-
 import org.apache.spark.internal.Logging
+
+import scala.collection.JavaConversions._
 
 
 class ZkHelper(
@@ -96,7 +91,7 @@ class ZkHelper(
   }
 
   private def writeZkFile(filePath: String, text: String): Unit = {
-    logInfo(s"Save $text to $filePath")
+    logDebug(s"Save $text to $filePath")
     if (!zkClient.exists(filePath)) {
       zkClient.createPersistent(filePath, true)
     }

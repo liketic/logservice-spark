@@ -85,10 +85,10 @@ class LoghubIterator(zkHelper: ZkHelper,
   }
 
   def fetchNextBatch(): Unit = {
-    val batchGetLogRes: BatchGetLogResponse =
+    val response: BatchGetLogResponse =
       client.BatchGetLog(project, logStore, shardId, logGroupStep, cursor)
     var count = 0
-    batchGetLogRes.GetLogGroups().foreach(group => {
+    response.GetLogGroups().foreach(group => {
       val fastLogGroup = group.GetFastLogGroup()
       val logCount = fastLogGroup.getLogsCount
       for (i <- 0 until logCount) {
@@ -112,7 +112,7 @@ class LoghubIterator(zkHelper: ZkHelper,
         logData.offer(obj.toJSONString)
       }
     })
-    val nextCursor = batchGetLogRes.GetNextCursor()
+    val nextCursor = response.GetNextCursor()
     logDebug(s"shardId: $shardId, currentCursor: $cursor, nextCursor: $nextCursor," +
       s" hasRead: $hasRead, count: $count," +
       s" get: $count, queue: ${logData.size()}")
