@@ -29,7 +29,8 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.dstream.{DStreamCheckpointData, InputDStream}
-import org.apache.spark.streaming.scheduler.StreamInputInfo
+import org.apache.spark.streaming.scheduler.rate.RateEstimator
+import org.apache.spark.streaming.scheduler.{RateController, StreamInputInfo}
 import org.apache.spark.streaming.{StreamingContext, Time}
 import org.apache.spark.util.ThreadUtils
 
@@ -53,6 +54,10 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
 
   private val enablePreciseCount: Boolean =
     _ssc.sparkContext.getConf.getBoolean("spark.streaming.loghub.count.precise.enable", defaultValue = true)
+  private val initialRate = context.sparkContext.getConf.getLong(
+    "spark.streaming.backpressure.initialRate", 0)
+  private val maxRate = _ssc.sparkContext.getConf.getInt("spark.streaming.loghub.maxRatePerShard", 10000)
+
   private var checkpointDir: String = _
   private val readOnlyShardCache = new mutable.HashMap[Int, String]()
   private val readOnlyShardEndCursorCache = new mutable.HashMap[Int, String]()
@@ -109,6 +114,32 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
     }
   }
 
+  /**
+   * Asynchronously maintains & sends new rate limits to the receiver through the receiver tracker.
+   */
+  override protected[streaming] val rateController: Option[RateController] = {
+    if (RateController.isBackPressureEnabled(ssc.conf)) {
+      Some(new DirectLoghubRateController(id,
+        RateEstimator.create(ssc.conf, context.graph.batchDuration)))
+    } else {
+      None
+    }
+  }
+
+  protected[streaming] def maxRatePerShard(shardCount: Int): Double = {
+    val estimatedRateLimit = rateController.map { x => {
+      val lr = x.getLatestRate()
+      if (lr > 0) lr else initialRate
+    }
+    }
+    estimatedRateLimit.filter(_ > 0) match {
+      case Some(rate) =>
+        logInfo(s"backpressurerate = $rate")
+        Math.min(rate / shardCount, maxRate)
+      case None => maxRate
+    }
+  }
+
   private def offsetRangeFor(shardId: Int, isReadonly: Boolean): (String, String) = {
     val start = zkHelper.readOffset(shardId)
     if (isReadonly) {
@@ -158,6 +189,7 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
       ssc.graph.batchDuration.milliseconds,
       zkParams,
       shardOffsets.toArray,
+      maxRatePerShard(shardOffsets.size),
       checkpointDir).setName(s"LoghubRDD-${validTime.toString()}")
     val description = shardOffsets.map { p =>
       val offset = "offset: [ %1$-30s to %2$-30s ]".format(p.fromCursor, p.untilCursor)
@@ -259,6 +291,14 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
     override def cleanup(time: Time): Unit = {}
 
     override def restore(): Unit = {}
+  }
+
+  /**
+   * A RateController to retrieve the rate from RateEstimator.
+   */
+  private[streaming] class DirectLoghubRateController(id: Int, estimator: RateEstimator)
+    extends RateController(id, estimator) {
+    override def publish(rate: Long): Unit = ()
   }
 
   override def finalize(): Unit = {

@@ -33,6 +33,7 @@ class LoghubRDD(@transient sc: SparkContext,
                 val duration: Long,
                 val zkParams: Map[String, String],
                 val offsetRanges: Array[OffsetRange],
+                val maxRatePerShard: Double,
                 val checkpointDir: String) extends RDD[String](sc, Nil) with Logging with HasOffsetRanges {
   @transient var client: LoghubClientAgent = _
   @transient var zkHelper: ZkHelper = _
@@ -92,9 +93,8 @@ class LoghubRDD(@transient sc: SparkContext,
   }
 
   override protected def getPartitions: Array[Partition] = {
-    val rate = sc.getConf.get("spark.streaming.loghub.maxRatePerShard", "10000").toInt
     val logGroupStep = sc.getConf.get("spark.loghub.batchGet.step", "100").toInt
-    val count = rate * duration / 1000
+    val count = (maxRatePerShard * duration / 1000).toLong
     offsetRanges.zipWithIndex.map { case (p, idx) =>
       new ShardPartition(id, idx, p.shardId, count, project, logStore, consumerGroup,
         accessKeyId, accessKeySecret, endpoint, p.fromCursor, logGroupStep)
