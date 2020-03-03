@@ -34,7 +34,7 @@ class LoghubIterator(zkHelper: ZkHelper,
                      consumerGroup: String,
                      shardId: Int,
                      startCursor: String,
-                     count: Int,
+                     maxRecordsPerShard: Int,
                      context: TaskContext,
                      logGroupStep: Int = 100)
   extends NextIterator[String] with Logging {
@@ -56,7 +56,7 @@ class LoghubIterator(zkHelper: ZkHelper,
   }
 
   override protected def getNext(): String = {
-    if (hasRead < count && shardEndNotReached) {
+    if (hasRead < maxRecordsPerShard && shardEndNotReached) {
       if (logData.isEmpty) {
         fetchNextBatch()
       }

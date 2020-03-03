@@ -126,18 +126,19 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
     }
   }
 
-  protected[streaming] def maxRatePerShard(shardCount: Int): Double = {
+  protected[streaming] def maxRecordsPerShard(shardCount: Int): Int = {
     val estimatedRateLimit = rateController.map { x => {
       val lr = x.getLatestRate()
       if (lr > 0) lr else initialRate
     }
     }
-    estimatedRateLimit.filter(_ > 0) match {
+    val ratePerShard = estimatedRateLimit.filter(_ > 0) match {
       case Some(rate) =>
-        logInfo(s"backpressurerate = $rate")
-        Math.min(rate / shardCount, maxRate)
+        val backpressureRate = rate * 1.0 / shardCount
+        Math.min(backpressureRate, maxRate)
       case None => maxRate
     }
+    (ratePerShard * (ssc.graph.batchDuration.milliseconds / 1000)).toInt
   }
 
   private def offsetRangeFor(shardId: Int, isReadonly: Boolean): (String, String) = {
@@ -186,10 +187,9 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
       accessKeyId,
       accessKeySecret,
       endpoint,
-      ssc.graph.batchDuration.milliseconds,
       zkParams,
       shardOffsets.toArray,
-      maxRatePerShard(shardOffsets.size),
+      maxRecordsPerShard(shardOffsets.size),
       checkpointDir).setName(s"LoghubRDD-${validTime.toString()}")
     val description = shardOffsets.map { p =>
       val offset = "offset: [ %1$-30s to %2$-30s ]".format(p.fromCursor, p.untilCursor)
