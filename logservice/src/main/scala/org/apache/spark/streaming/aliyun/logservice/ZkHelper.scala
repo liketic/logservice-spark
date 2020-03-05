@@ -26,14 +26,13 @@ import org.apache.spark.internal.Logging
 import scala.collection.JavaConversions._
 
 
-class ZkHelper(
-   zkParams: Map[String, String],
-   checkpointDir: String,
-   project: String,
-   logstore: String) extends Logging {
+class ZkHelper(zkParams: Map[String, String],
+               checkpointDir: String,
+               project: String,
+               logstore: String) extends Logging {
 
   private val zkDir = s"$checkpointDir/commit/$project/$logstore"
-  private val legacyCommitDir = s"$checkpointDir/consume/$project/$logstore"
+
   @transient private var zkClient: ZkClient = _
 
   def initialize(): Unit = {
@@ -96,11 +95,6 @@ class ZkHelper(
       zkClient.createPersistent(filePath, true)
     }
     zkClient.writeData(filePath, text)
-  }
-
-  def saveLegacyOffset(shard: Int, cursor: String): Unit = {
-    val cursorFile = s"$legacyCommitDir/$shard.shard"
-    writeZkFile(cursorFile, cursor)
   }
 
   def tryLock(shard: Int): Boolean = {

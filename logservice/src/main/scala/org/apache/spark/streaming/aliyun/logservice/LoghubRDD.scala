@@ -31,7 +31,9 @@ class LoghubRDD(@transient sc: SparkContext,
                 val zkParams: Map[String, String],
                 val offsetRanges: Array[OffsetRange],
                 val maxRecordsPerShard: Int,
-                val checkpointDir: String) extends RDD[String](sc, Nil) with Logging with HasOffsetRanges {
+                val checkpointDir: String)
+  extends RDD[String](sc, Nil) with Logging with HasOffsetRanges {
+
   @transient var client: LoghubClientAgent = _
   @transient var zkHelper: ZkHelper = _
 
@@ -50,9 +52,9 @@ class LoghubRDD(@transient sc: SparkContext,
     initialize()
     val partition = split.asInstanceOf[ShardPartition]
     try {
-      val iter = new LoghubIterator(zkHelper, client,
-        project,
-        logstore,
+      val iter = new LoghubIterator(
+        zkHelper,
+        client,
         partition,
         context)
       new InterruptibleIterator[String](context, iter)

@@ -129,20 +129,13 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
     (ratePerShard * (ssc.graph.batchDuration.milliseconds / 1000)).toInt
   }
 
-  private def offsetRangeFor(shardId: Int, isReadonly: Boolean): (String, String) = {
-    val start = zkHelper.readOffset(shardId)
-    if (isReadonly) {
-      var endCursor = readOnlyShardEndCursorCache.getOrElse(shardId, null)
-      if (endCursor == null) {
-        endCursor =
-          loghubClient.GetCursor(project, logstore, shardId, CursorMode.END).GetCursor()
-        readOnlyShardEndCursorCache.put(shardId, endCursor)
-      }
-      (start, endCursor)
-    } else {
-      // Do not fetch end cursor for performance concern.
-      (start, null)
+  private def endCursorForReadOnlyShard(shardId: Int): String = {
+    var endCursor = readOnlyShardEndCursorCache.getOrElse(shardId, null)
+    if (endCursor == null) {
+      endCursor = loghubClient.GetCursor(project, logstore, shardId, CursorMode.END).GetCursor()
+      readOnlyShardEndCursorCache.put(shardId, endCursor)
     }
+    endCursor
   }
 
   override def compute(validTime: Time): Option[RDD[String]] = {
@@ -153,14 +146,18 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
       if (readOnlyShardCache.contains(shardId)) {
         logInfo(s"There is no data to consume from shard $shardId.")
       } else if (zkHelper.tryLock(shardId)) {
-        val isReadonly = shard.getStatus.equalsIgnoreCase("readonly")
-        val r = offsetRangeFor(shardId, isReadonly)
-        val start = r._1
-        val end = r._2
-        if (isReadonly && start.equals(end)) {
-          logInfo(s"Skip shard $shardId which start and end cursor both are $start")
-          readOnlyShardCache.put(shardId, end)
-          zkHelper.unlock(shardId)
+        val start = zkHelper.readOffset(shardId)
+        var end: String = null
+        if (shard.getStatus.equalsIgnoreCase("readonly")) {
+          end = endCursorForReadOnlyShard(shardId)
+          if (start.equals(end)) {
+            logInfo(s"Skip shard $shardId which start and end cursor both are $start")
+            readOnlyShardCache.put(shardId, end)
+            zkHelper.unlock(shardId)
+          } else {
+            shardOffsets.add(OffsetRange(shardId, start, end))
+            logInfo(s"Shard $shardId range [$start, $end)")
+          }
         } else {
           shardOffsets.add(OffsetRange(shardId, start, end))
           logInfo(s"Shard $shardId range [$start, $end)")
@@ -208,8 +205,6 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
     offsetRanges.foreach(r => {
       pool.submit(new Runnable {
         override def run(): Unit = {
-          // Remove this once we don't need to rollback
-          zkHelper.saveLegacyOffset(r.shardId, r.fromCursor)
           loghubClient.safeUpdateCheckpoint(project, logstore, consumerGroup, r.shardId, r.fromCursor)
         }
       })
