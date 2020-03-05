@@ -71,10 +71,10 @@ public class LoghubClientAgent {
         return RetryUtil.call(() -> client.GetCheckPoint(project, logstore, consumerGroup));
     }
 
-    public BatchGetLogResponse BatchGetLog(String project, String logstore, int shardId, int count, String cursor)
-            throws Exception {
+    public BatchGetLogResponse BatchGetLog(String project, String logstore, int shardId, int count, String cursor,
+                                           String endCursor) throws Exception {
         try {
-            return RetryUtil.call(() -> client.BatchGetLog(project, logstore, shardId, count, cursor));
+            return RetryUtil.call(() -> client.BatchGetLog(project, logstore, shardId, count, cursor, endCursor));
         } catch (LogException ex) {
             if (ex.GetErrorCode().equals("ShardNotExist")) {
                 LOG.warn("Cannot pull log: " + ex.GetErrorMessage());
@@ -83,11 +83,6 @@ public class LoghubClientAgent {
                 throw ex;
             }
         }
-    }
-
-    public BatchGetLogResponse BatchGetLog(String project, String logstore, int shardId, int count, String cursor,
-                                           String endCursor) throws Exception {
-        return RetryUtil.call(() -> client.BatchGetLog(project, logstore, shardId, count, cursor, endCursor));
     }
 
     public GetHistogramsResponse GetHistograms(String project, String logstore, int from, int to, String topic,
