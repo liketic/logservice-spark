@@ -17,10 +17,9 @@
 package com.aliyun.openservices.examples.streaming
 
 import com.aliyun.openservices.loghub.client.config.LogHubCursorPosition
-
 import org.apache.spark.SparkConf
 import org.apache.spark.streaming.{Milliseconds, StreamingContext}
-import org.apache.spark.streaming.aliyun.logservice.{CanCommitOffsets, LoghubUtils}
+import org.apache.spark.streaming.aliyun.logservice.{CanCommitOffsets, HasOffsetRanges, LoghubUtils}
 
 object TestDirectLoghub {
   def main(args: Array[String]): Unit = {
@@ -60,13 +59,12 @@ object TestDirectLoghub {
         LogHubCursorPosition.END_CURSOR)
 
       loghubStream.checkpoint(batchInterval).foreachRDD(rdd => {
-        // scalastyle:off
         println(s"count by key: ${rdd.map(s => {
           s.sorted
           (s.length, s)
         }).countByKey().size}")
-        // scalastyle:on
-        loghubStream.asInstanceOf[CanCommitOffsets].commitAsync()
+
+        loghubStream.asInstanceOf[CanCommitOffsets].commitAsync(rdd.asInstanceOf[HasOffsetRanges].offsetRanges)
       })
       ssc.checkpoint("hdfs:///tmp/spark/streaming") // set checkpoint directory
       ssc
