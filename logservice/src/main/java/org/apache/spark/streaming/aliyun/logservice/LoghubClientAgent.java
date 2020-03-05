@@ -36,9 +36,9 @@ public class LoghubClientAgent {
         this.client.setUserAgent(VersionInfoUtils.getUserAgent());
     }
 
-    public ListShardResponse ListShard(String logProject, String logStore)
+    public ListShardResponse ListShard(String logProject, String logstore)
             throws Exception {
-        return RetryUtil.call(() -> client.ListShard(logProject, logStore));
+        return RetryUtil.call(() -> client.ListShard(logProject, logstore));
     }
 
     public GetCursorResponse GetCursor(String project, String logStream, int shardId, Consts.CursorMode mode)
@@ -46,10 +46,10 @@ public class LoghubClientAgent {
         return RetryUtil.call(() -> client.GetCursor(project, logStream, shardId, mode));
     }
 
-    public boolean safeUpdateCheckpoint(String project, String logStore, String consumerGroup,
+    public boolean safeUpdateCheckpoint(String project, String logstore, String consumerGroup,
                                         int shard, String checkpoint) {
         try {
-            client.UpdateCheckPoint(project, logStore, consumerGroup, shard, checkpoint);
+            client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
             return true;
         } catch (LogException ex) {
             LOG.warn("Unable to commit checkpoint: " + ex.GetErrorMessage());
@@ -57,41 +57,41 @@ public class LoghubClientAgent {
         return false;
     }
 
-    public GetCursorResponse GetCursor(String project, String logStore, int shardId, long fromTime) throws Exception {
-        return RetryUtil.call(() -> client.GetCursor(project, logStore, shardId, fromTime));
+    public GetCursorResponse GetCursor(String project, String logstore, int shardId, long fromTime) throws Exception {
+        return RetryUtil.call(() -> client.GetCursor(project, logstore, shardId, fromTime));
     }
 
-    public CreateConsumerGroupResponse CreateConsumerGroup(String project, String logStore, ConsumerGroup consumerGroup)
+    public CreateConsumerGroupResponse CreateConsumerGroup(String project, String logstore, ConsumerGroup consumerGroup)
             throws Exception {
-        return RetryUtil.call(() -> client.CreateConsumerGroup(project, logStore, consumerGroup));
+        return RetryUtil.call(() -> client.CreateConsumerGroup(project, logstore, consumerGroup));
     }
 
-    public ListConsumerGroupResponse ListConsumerGroup(String project, String logStore) throws Exception {
-        return RetryUtil.call(() -> client.ListConsumerGroup(project, logStore));
-    }
-
-    public ConsumerGroupCheckPointResponse ListCheckpoints(String project, String logStore, String consumerGroup)
+    public ConsumerGroupCheckPointResponse ListCheckpoints(String project, String logstore, String consumerGroup)
             throws Exception {
-        return RetryUtil.call(() -> client.GetCheckPoint(project, logStore, consumerGroup));
+        return RetryUtil.call(() -> client.GetCheckPoint(project, logstore, consumerGroup));
     }
 
-    public BatchGetLogResponse BatchGetLog(String project, String logStore, int shardId, int count, String cursor)
-            throws Exception {
-        return RetryUtil.call(() -> client.BatchGetLog(project, logStore, shardId, count, cursor));
-    }
-
-    public BatchGetLogResponse BatchGetLog(String project, String logStore, int shardId, int count, String cursor,
+    public BatchGetLogResponse BatchGetLog(String project, String logstore, int shardId, int count, String cursor,
                                            String endCursor) throws Exception {
-        return RetryUtil.call(() -> client.BatchGetLog(project, logStore, shardId, count, cursor, endCursor));
+        try {
+            return RetryUtil.call(() -> client.BatchGetLog(project, logstore, shardId, count, cursor, endCursor));
+        } catch (LogException ex) {
+            if (ex.GetErrorCode().equals("ShardNotExist")) {
+                LOG.warn("Cannot pull log: " + ex.GetErrorMessage());
+                return null;
+            } else {
+                throw ex;
+            }
+        }
     }
 
-    public GetHistogramsResponse GetHistograms(String project, String logStore, int from, int to, String topic,
+    public GetHistogramsResponse GetHistograms(String project, String logstore, int from, int to, String topic,
                                                String query) throws Exception {
-        return RetryUtil.call(() -> client.GetHistograms(project, logStore, from, to, topic, query));
+        return RetryUtil.call(() -> client.GetHistograms(project, logstore, from, to, topic, query));
     }
 
-    public GetCursorTimeResponse GetCursorTime(String project, String logStore, int shardId, String cursor)
+    public GetCursorTimeResponse GetCursorTime(String project, String logstore, int shardId, String cursor)
             throws Exception {
-        return RetryUtil.call(() -> client.GetCursorTime(project, logStore, shardId, cursor));
+        return RetryUtil.call(() -> client.GetCursorTime(project, logstore, shardId, cursor));
     }
 }

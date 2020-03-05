@@ -16,10 +16,23 @@
  */
 package org.apache.spark.streaming.aliyun.logservice
 
-/**
- * Loghub offset range.
- * @param shardId Loghub shard id.
- * @param beginCursor The start cursor of range.
- * @param endCursor The end cursor of range.
- */
-case class ShardOffsetRange(shardId: Int, beginCursor: String, endCursor: String)
+import org.apache.spark.Partition
+
+case class ShardPartition(rddId: Int,
+                          partitionId: Int,
+                          shardId: Int,
+                          maxRecordsPerShard: Int,
+                          project: String,
+                          logstore: String,
+                          accessKeyId: String,
+                          accessKeySecret: String,
+                          endpoint: String,
+                          startCursor: String,
+                          endCursor: String,
+                          batchSize: Int = 100) extends Partition {
+  override def hashCode(): Int = 41 * (41 + rddId) + shardId
+
+  override def equals(other: Any): Boolean = super.equals(other)
+
+  override def index: Int = partitionId
+}
