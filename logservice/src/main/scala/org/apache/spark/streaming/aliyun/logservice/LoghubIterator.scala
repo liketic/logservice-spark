@@ -30,8 +30,6 @@ import scala.collection.JavaConversions._
 
 class LoghubIterator(zkHelper: ZkHelper,
                      client: LoghubClientAgent,
-                     project: String,
-                     logstore: String,
                      part: ShardPartition,
                      context: TaskContext)
   extends NextIterator[String] with Logging {
@@ -40,12 +38,12 @@ class LoghubIterator(zkHelper: ZkHelper,
   private var cursor = part.startCursor
   private var endCursor = part.endCursor
   private val shardId = part.shardId
-  private var isFetchEndCursorCalled: Boolean = false
   private val maxRecordsPerShard = part.maxRecordsPerShard
-  private val batchSize = part.logGroupStep
   private var buffer = new LinkedBlockingQueue[String](maxRecordsPerShard)
-  private var shardEndNotReached: Boolean = true
-  private var unlocked: Boolean = false
+  private var hasNextBatch = true
+  private var unlocked = false
+  private var isFetchEndCursorCalled = false
+
   private val inputMetrics = context.taskMetrics.inputMetrics
 
   context.addTaskCompletionListener { _ => closeIfNeeded() }
@@ -58,7 +56,7 @@ class LoghubIterator(zkHelper: ZkHelper,
   }
 
   override protected def getNext(): String = {
-    if (hasRead < maxRecordsPerShard && shardEndNotReached) {
+    if (hasRead < maxRecordsPerShard && hasNextBatch) {
       if (buffer.isEmpty) {
         fetchNextBatch()
       }
@@ -117,12 +115,12 @@ class LoghubIterator(zkHelper: ZkHelper,
 
   def fetchNextBatch(): Unit = {
     fetchEndCursor()
-    val response = client.BatchGetLog(project, logstore, shardId, batchSize, cursor, endCursor)
-    if (response == null) {
+    val r = client.BatchGetLog(part.project, part.logstore, shardId, part.batchSize, cursor, endCursor)
+    if (r == null) {
       return
     }
     var count = 0
-    response.GetLogGroups().foreach(group => {
+    r.GetLogGroups().foreach(group => {
       val fastLogGroup = group.GetFastLogGroup()
       val logCount = fastLogGroup.getLogsCount
       count += logCount
@@ -146,7 +144,7 @@ class LoghubIterator(zkHelper: ZkHelper,
         buffer.offer(obj.toJSONString)
       }
     })
-    val nextCursor = response.GetNextCursor()
+    val nextCursor = r.GetNextCursor()
     if (log.isDebugEnabled) {
       logDebug(s"shardId: $shardId, currentCursor: $cursor, nextCursor: $nextCursor," +
         s" hasRead: $hasRead, count: $count," +
@@ -154,7 +152,7 @@ class LoghubIterator(zkHelper: ZkHelper,
     }
     if (cursor.equals(nextCursor)) {
       logDebug(s"No data at cursor $cursor in shard $shardId")
-      shardEndNotReached = false
+      hasNextBatch = false
     } else {
       cursor = nextCursor
     }

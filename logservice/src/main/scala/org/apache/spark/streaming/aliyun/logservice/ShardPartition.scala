@@ -29,7 +29,7 @@ case class ShardPartition(rddId: Int,
                           endpoint: String,
                           startCursor: String,
                           endCursor: String,
-                          logGroupStep: Int = 100) extends Partition {
+                          batchSize: Int = 100) extends Partition {
   override def hashCode(): Int = 41 * (41 + rddId) + shardId
 
   override def equals(other: Any): Boolean = super.equals(other)

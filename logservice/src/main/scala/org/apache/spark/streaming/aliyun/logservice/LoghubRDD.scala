@@ -58,14 +58,15 @@ class LoghubRDD(@transient sc: SparkContext,
       new InterruptibleIterator[String](context, iter)
     } catch {
       case _: Exception =>
-        Iterator.empty.asInstanceOf[Iterator[String]]
+        Iterator.empty
     }
   }
 
   override protected def getPartitions: Array[Partition] = {
-    val logGroupStep = sc.getConf.get("spark.loghub.batchGet.step", "100").toInt
+    val batchSize = sc.getConf.get("spark.loghub.batchGet.step", "100").toInt
     offsetRanges.zipWithIndex.map { case (p, idx) =>
-      ShardPartition(id, idx, p.shardId,
+      ShardPartition(id, idx,
+        p.shardId,
         maxRecordsPerShard,
         project,
         logstore,
@@ -74,7 +75,7 @@ class LoghubRDD(@transient sc: SparkContext,
         endpoint,
         p.fromCursor,
         p.untilCursor,
-        logGroupStep).asInstanceOf[Partition]
+        batchSize).asInstanceOf[Partition]
     }
   }
 }
