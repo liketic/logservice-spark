@@ -16,10 +16,11 @@
  */
 package org.apache.spark.streaming.aliyun.logservice
 
+import java.nio.charset.StandardCharsets
+import java.util.Base64
 import java.util.concurrent.LinkedBlockingQueue
 
 import com.alibaba.fastjson.JSONObject
-import com.aliyun.openservices.log.response.BatchGetLogResponse
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.aliyun.logservice.LoghubSourceProvider._
@@ -31,17 +32,18 @@ class LoghubIterator(zkHelper: ZkHelper,
                      client: LoghubClientAgent,
                      project: String,
                      logstore: String,
-                     consumerGroup: String,
-                     shardId: Int,
-                     startCursor: String,
-                     maxRecordsPerShard: Int,
-                     context: TaskContext,
-                     logGroupStep: Int = 100)
+                     part: ShardPartition,
+                     context: TaskContext)
   extends NextIterator[String] with Logging {
 
   private var hasRead: Int = 0
-  private var cursor: String = startCursor
-  private var logData = new LinkedBlockingQueue[String](1000 * logGroupStep)
+  private var cursor = part.startCursor
+  private var endCursor = part.endCursor
+  private val shardId = part.shardId
+  private var isFetchEndCursorCalled: Boolean = false
+  private val maxRecordsPerShard = part.maxRecordsPerShard
+  private val batchSize = part.logGroupStep
+  private var buffer = new LinkedBlockingQueue[String](maxRecordsPerShard)
   private var shardEndNotReached: Boolean = true
   private var unlocked: Boolean = false
   private val inputMetrics = context.taskMetrics.inputMetrics
@@ -57,11 +59,11 @@ class LoghubIterator(zkHelper: ZkHelper,
 
   override protected def getNext(): String = {
     if (hasRead < maxRecordsPerShard && shardEndNotReached) {
-      if (logData.isEmpty) {
+      if (buffer.isEmpty) {
         fetchNextBatch()
       }
     }
-    if (logData.isEmpty) {
+    if (buffer.isEmpty) {
       finished = true
       zkHelper.saveOffset(shardId, cursor)
       unlock()
@@ -69,7 +71,7 @@ class LoghubIterator(zkHelper: ZkHelper,
       null
     } else {
       hasRead += 1
-      logData.poll()
+      buffer.poll()
     }
   }
 
@@ -77,16 +79,45 @@ class LoghubIterator(zkHelper: ZkHelper,
     try {
       unlock()
       inputMetrics.incBytesRead(hasRead)
-      logData.clear()
-      logData = null
+      buffer.clear()
+      buffer = null
     } catch {
       case e: Exception => logWarning("Exception when close LoghubIterator.", e)
     }
   }
 
+  private def decideCursorToTs(cursor: String): Long = {
+    val bytes = Base64.getDecoder.decode(cursor.getBytes(StandardCharsets.UTF_8))
+    new String(bytes, StandardCharsets.UTF_8).toLong
+  }
+
+  private def fetchEndCursor(): Unit = {
+    if (!isFetchEndCursorCalled) {
+      if (endCursor != null) {
+        // For read only shard, the cursor range will be provided
+        isFetchEndCursorCalled = true
+        return
+      }
+      endCursor = zkHelper.readOffset(shardId)
+      if (cursor.equals(endCursor)) {
+        // end cursor was not updated which means we're the first fetching.
+        endCursor = null
+      } else {
+        val beginTs = decideCursorToTs(cursor)
+        val endTs = decideCursorToTs(endCursor)
+        if (beginTs >= endTs) {
+          // End cursor maybe a earlier cursor, this should
+          // never happen in normal case.
+          endCursor = null
+        }
+      }
+      isFetchEndCursorCalled = true
+    }
+  }
+
   def fetchNextBatch(): Unit = {
-    val response: BatchGetLogResponse =
-      client.BatchGetLog(project, logstore, shardId, logGroupStep, cursor)
+    fetchEndCursor()
+    val response = client.BatchGetLog(project, logstore, shardId, batchSize, cursor, endCursor)
     if (response == null) {
       return
     }
@@ -94,6 +125,7 @@ class LoghubIterator(zkHelper: ZkHelper,
     response.GetLogGroups().foreach(group => {
       val fastLogGroup = group.GetFastLogGroup()
       val logCount = fastLogGroup.getLogsCount
+      count += logCount
       for (i <- 0 until logCount) {
         val log = fastLogGroup.getLogs(i)
         val topic = fastLogGroup.getTopic
@@ -111,14 +143,15 @@ class LoghubIterator(zkHelper: ZkHelper,
           val tag = fastLogGroup.getLogTags(i)
           obj.put("__tag__:".concat(tag.getKey), tag.getValue)
         }
-        count += 1
-        logData.offer(obj.toJSONString)
+        buffer.offer(obj.toJSONString)
       }
     })
     val nextCursor = response.GetNextCursor()
-    logDebug(s"shardId: $shardId, currentCursor: $cursor, nextCursor: $nextCursor," +
-      s" hasRead: $hasRead, count: $count," +
-      s" get: $count, queue: ${logData.size()}")
+    if (log.isDebugEnabled) {
+      logDebug(s"shardId: $shardId, currentCursor: $cursor, nextCursor: $nextCursor," +
+        s" hasRead: $hasRead, count: $count," +
+        s" get: $count, queue: ${buffer.size()}")
+    }
     if (cursor.equals(nextCursor)) {
       logDebug(s"No data at cursor $cursor in shard $shardId")
       shardEndNotReached = false

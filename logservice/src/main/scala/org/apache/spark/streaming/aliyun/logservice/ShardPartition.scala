@@ -16,25 +16,23 @@
  */
 package org.apache.spark.streaming.aliyun.logservice
 
+import org.apache.spark.Partition
 
-/**
- * Loghub offset range.
- *
- * @param shardId     Loghub shard id.
- * @param fromCursor  The start cursor of range.
- * @param untilCursor The end cursor of range which may be null.
- */
-case class OffsetRange(shardId: Int, fromCursor: String, untilCursor: String)
+case class ShardPartition(rddId: Int,
+                          partitionId: Int,
+                          shardId: Int,
+                          maxRecordsPerShard: Int,
+                          project: String,
+                          logstore: String,
+                          accessKeyId: String,
+                          accessKeySecret: String,
+                          endpoint: String,
+                          startCursor: String,
+                          endCursor: String,
+                          logGroupStep: Int = 100) extends Partition {
+  override def hashCode(): Int = 41 * (41 + rddId) + shardId
 
+  override def equals(other: Any): Boolean = super.equals(other)
 
-trait HasOffsetRanges {
-  def offsetRanges: Array[OffsetRange]
-}
-
-trait CanCommitOffsets {
-  /**
-   * Queue up offset ranges for commit to Loghub at a future time.  Threadsafe.
-   * This is only needed if you intend to store offsets in Loghub, instead of your own store.
-   */
-  def commitAsync(offsets: Array[OffsetRange]): Unit
+  override def index: Int = partitionId
 }

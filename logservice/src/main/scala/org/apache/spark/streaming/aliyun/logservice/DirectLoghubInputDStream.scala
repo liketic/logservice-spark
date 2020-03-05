@@ -52,8 +52,6 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
   @transient private var zkHelper: ZkHelper = _
   @transient private var loghubClient: LoghubClientAgent = _
 
-  private val enablePreciseCount: Boolean =
-    _ssc.sparkContext.getConf.getBoolean("spark.streaming.loghub.count.precise.enable", defaultValue = true)
   private val initialRate = context.sparkContext.getConf.getLong(
     "spark.streaming.backpressure.initialRate", 0)
   private val maxRate = _ssc.sparkContext.getConf.getInt("spark.streaming.loghub.maxRatePerShard", 10000)
@@ -63,16 +61,6 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
   private val readOnlyShardEndCursorCache = new mutable.HashMap[Int, String]()
 
   override def start(): Unit = {
-    if (enablePreciseCount) {
-      logWarning(s"Enable precise count on loghub rdd, we will submit a count job in each batch. " +
-        s"This value is showed in each batch job in streaming tab in Web UI. This may increase " +
-        s"the total process time in each batch. You can disable the behavior by setting " +
-        s"'spark.streaming.loghub.count.precise.enable'=false")
-    } else {
-      logWarning(s"Disable precise count on loghub rdd, we will get an approximate count of " +
-        s"loghub rdd, via the `GetHistograms` api of log service. You can enable the behavior " +
-        s"by setting 'spark.streaming.loghub.count.precise.enable'=true")
-    }
     var zkCheckpointDir = ssc.checkpointDir
     if (StringUtils.isBlank(zkCheckpointDir)) {
       zkCheckpointDir = s"/$consumerGroup"
