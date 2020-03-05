@@ -30,7 +30,7 @@ import scala.collection.JavaConversions._
 class LoghubIterator(zkHelper: ZkHelper,
                      client: LoghubClientAgent,
                      project: String,
-                     logStore: String,
+                     logstore: String,
                      consumerGroup: String,
                      shardId: Int,
                      startCursor: String,
@@ -86,7 +86,10 @@ class LoghubIterator(zkHelper: ZkHelper,
 
   def fetchNextBatch(): Unit = {
     val response: BatchGetLogResponse =
-      client.BatchGetLog(project, logStore, shardId, logGroupStep, cursor)
+      client.BatchGetLog(project, logstore, shardId, logGroupStep, cursor)
+    if (response == null) {
+      return
+    }
     var count = 0
     response.GetLogGroups().foreach(group => {
       val fastLogGroup = group.GetFastLogGroup()
