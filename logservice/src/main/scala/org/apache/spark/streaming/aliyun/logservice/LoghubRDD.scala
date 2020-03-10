@@ -88,7 +88,7 @@ object LoghubRDD extends Logging {
 
   def getOrCreateLoghubClient(accessKeyId: String,
                               accessKeySecret: String,
-                              endpoint: String): LoghubClientAgent = {
+                              endpoint: String): LoghubClientAgent = synchronized {
     if (loghubClient == null) {
       loghubClient = new LoghubClientAgent(endpoint, accessKeyId, accessKeySecret)
     }
@@ -98,7 +98,7 @@ object LoghubRDD extends Logging {
   def getZkHelper(zkParams: Map[String, String],
                   checkpointDir: String,
                   project: String,
-                  logstore: String): ZkHelper = {
+                  logstore: String): ZkHelper = synchronized {
     if (zkHelper == null) {
       zkHelper = new ZkHelper(zkParams, checkpointDir, project, logstore)
       zkHelper.initialize()

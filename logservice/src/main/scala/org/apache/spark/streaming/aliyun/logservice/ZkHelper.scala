@@ -35,7 +35,11 @@ class ZkHelper(zkParams: Map[String, String],
 
   @transient private var zkClient: ZkClient = _
 
-  def initialize(): Unit = {
+  def initialize(): Unit = synchronized {
+    if (zkClient != null) {
+      // already initialized
+      return
+    }
     val zkConnect = zkParams.getOrElse("zookeeper.connect", "localhost:2181")
     val zkSessionTimeoutMs = zkParams.getOrElse("zookeeper.session.timeout.ms", "6000").toInt
     val zkConnectionTimeoutMs =
@@ -58,6 +62,7 @@ class ZkHelper(zkParams: Map[String, String],
   }
 
   def mkdir(): Unit = {
+    initialize()
     try {
       // Check if zookeeper is usable. Direct loghub api depends on zookeeper.
       if (!zkClient.exists(zkDir)) {
@@ -81,23 +86,22 @@ class ZkHelper(zkParams: Map[String, String],
   }
 
   def readOffset(shardId: Int): String = {
+    initialize()
     zkClient.readData(s"$zkDir/$shardId.shard")
   }
 
   def saveOffset(shard: Int, cursor: String): Unit = {
+    initialize()
     val cursorFile = s"$zkDir/$shard.shard"
-    writeZkFile(cursorFile, cursor)
-  }
-
-  private def writeZkFile(filePath: String, text: String): Unit = {
-    logDebug(s"Save $text to $filePath")
-    if (!zkClient.exists(filePath)) {
-      zkClient.createPersistent(filePath, true)
+    logDebug(s"Save $cursor to $cursorFile")
+    if (!zkClient.exists(cursorFile)) {
+      zkClient.createPersistent(cursorFile, true)
     }
-    zkClient.writeData(filePath, text)
+    zkClient.writeData(cursorFile, cursor)
   }
 
   def tryLock(shard: Int): Boolean = {
+    initialize()
     val lockFile = s"$zkDir/$shard.lock"
     try {
       zkClient.createPersistent(lockFile, false)
@@ -110,6 +114,7 @@ class ZkHelper(zkParams: Map[String, String],
   }
 
   def unlock(shard: Int): Unit = {
+    initialize()
     try {
       zkClient.delete(s"$zkDir/$shard.lock")
     } catch {
@@ -118,7 +123,7 @@ class ZkHelper(zkParams: Map[String, String],
     }
   }
 
-  def close(): Unit = {
+  def close(): Unit = synchronized {
     if (zkClient != null) {
       zkClient.close()
       zkClient = null
