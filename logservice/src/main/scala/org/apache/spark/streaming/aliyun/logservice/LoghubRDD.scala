@@ -38,8 +38,8 @@ class LoghubRDD(@transient sc: SparkContext,
   @transient var zkHelper: ZkHelper = _
 
   private def initialize(): Unit = {
-    client = LoghubRDD.getOrCreateLoghubClient(accessKeyId, accessKeySecret, endpoint)
-    zkHelper = LoghubRDD.getZkHelper(zkParams, checkpointDir, project, logstore)
+    zkHelper = ZkHelper.getOrCreate(zkParams, checkpointDir, project, logstore)
+    client = LoghubClient.getOrCreate(accessKeyId, accessKeySecret, endpoint)
   }
 
   override def count(): Long = {
@@ -78,43 +78,6 @@ class LoghubRDD(@transient sc: SparkContext,
         p.fromCursor,
         p.untilCursor,
         batchSize).asInstanceOf[Partition]
-    }
-  }
-}
-
-object LoghubRDD extends Logging {
-  private var zkHelper: ZkHelper = _
-  private var loghubClient: LoghubClientAgent = _
-
-  def getOrCreateLoghubClient(accessKeyId: String,
-                              accessKeySecret: String,
-                              endpoint: String): LoghubClientAgent = synchronized {
-    if (loghubClient == null) {
-      loghubClient = new LoghubClientAgent(endpoint, accessKeyId, accessKeySecret)
-    }
-    loghubClient
-  }
-
-  def getZkHelper(zkParams: Map[String, String],
-                  checkpointDir: String,
-                  project: String,
-                  logstore: String): ZkHelper = synchronized {
-    if (zkHelper == null) {
-      zkHelper = new ZkHelper(zkParams, checkpointDir, project, logstore)
-      zkHelper.initialize()
-    }
-    zkHelper
-  }
-
-  override def finalize(): Unit = {
-    super.finalize()
-    try {
-      if (zkHelper != null) {
-        zkHelper.close()
-        zkHelper = null
-      }
-    } catch {
-      case e: Exception => logWarning("Exception when close zkClient.", e)
     }
   }
 }

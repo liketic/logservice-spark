@@ -130,3 +130,19 @@ class ZkHelper(zkParams: Map[String, String],
     }
   }
 }
+
+object ZkHelper extends Logging {
+
+  private var cache: ZkHelper = _
+
+  def getOrCreate(zkParams: Map[String, String],
+                  checkpointDir: String,
+                  project: String,
+                  logstore: String): ZkHelper = synchronized {
+    if (cache == null) {
+      cache = new ZkHelper(zkParams, checkpointDir, project, logstore)
+      cache.initialize()
+    }
+    cache
+  }
+}
