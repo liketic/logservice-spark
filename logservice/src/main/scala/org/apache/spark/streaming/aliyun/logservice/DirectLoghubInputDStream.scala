@@ -79,6 +79,7 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
     }
     if (zkHelper == null) {
       zkHelper = ZkHelper.getOrCreate(zkParams, checkpointDir, project, logstore)
+      zkHelper.mkdir()
       val checkpoints = createConsumerGroupOrGetCheckpoint()
       loghubClient.ListShard(project, logstore).GetShards().foreach(r => {
         val shardId = r.GetShardId()
