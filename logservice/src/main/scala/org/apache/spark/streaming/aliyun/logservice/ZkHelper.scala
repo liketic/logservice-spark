@@ -17,6 +17,7 @@
 package org.apache.spark.streaming.aliyun.logservice
 
 import java.nio.charset.StandardCharsets
+import java.util
 
 import org.I0Itec.zkclient.ZkClient
 import org.I0Itec.zkclient.exception.{ZkNoNodeException, ZkNodeExistsException}
@@ -133,16 +134,27 @@ class ZkHelper(zkParams: Map[String, String],
 
 object ZkHelper extends Logging {
 
-  private var cache: ZkHelper = _
+  private case class CacheKey(zkParams: Map[String, String],
+                              checkpointDir: String,
+                              project: String,
+                              logstore: String)
+
+  private var cache: util.HashMap[CacheKey, ZkHelper] = _
 
   def getOrCreate(zkParams: Map[String, String],
                   checkpointDir: String,
                   project: String,
                   logstore: String): ZkHelper = synchronized {
     if (cache == null) {
-      cache = new ZkHelper(zkParams, checkpointDir, project, logstore)
-      cache.initialize()
+      cache = new util.HashMap[CacheKey, ZkHelper]()
     }
-    cache
+    val k = CacheKey(zkParams, checkpointDir, project, logstore)
+    var zkHelper = cache.get(k)
+    if (zkHelper == null) {
+      zkHelper = new ZkHelper(zkParams, checkpointDir, project, logstore)
+      zkHelper.initialize()
+      cache.put(k, zkHelper)
+    }
+    zkHelper
   }
 }
