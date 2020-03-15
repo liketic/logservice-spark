@@ -18,15 +18,18 @@ package org.apache.spark.streaming.aliyun.logservice
 
 import java.util
 
+import org.apache.spark.streaming.aliyun.logservice.utils.VersionInfoUtils
+
 object LoghubClient {
 
   private case class CacheKey(accessKeyId: String, accessKeySecret: String, endpoint: String)
 
   private var cache: util.HashMap[CacheKey, LoghubClientAgent] = _
 
-  def getOrCreate(accessKeyId: String,
+  def getOrCreate(endpoint: String,
+                  accessKeyId: String,
                   accessKeySecret: String,
-                  endpoint: String): LoghubClientAgent = synchronized {
+                  consumerGroup: String): LoghubClientAgent = synchronized {
     if (cache == null) {
       cache = new util.HashMap[CacheKey, LoghubClientAgent]()
     }
@@ -34,6 +37,7 @@ object LoghubClient {
     var client = cache.get(k)
     if (client == null) {
       client = new LoghubClientAgent(endpoint, accessKeyId, accessKeySecret)
+      client.setUserAgent(VersionInfoUtils.getUserAgent + "-" + consumerGroup)
       cache.put(k, client)
     }
     client

@@ -39,7 +39,7 @@ class LoghubRDD(@transient sc: SparkContext,
 
   private def initialize(): Unit = {
     zkHelper = ZkHelper.getOrCreate(zkParams, checkpointDir, project, logstore)
-    client = LoghubClient.getOrCreate(accessKeyId, accessKeySecret, endpoint)
+    client = LoghubClient.getOrCreate(endpoint, accessKeyId, accessKeySecret, consumerGroup)
   }
 
   override def count(): Long = {

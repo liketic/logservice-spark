@@ -72,10 +72,12 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
   }
 
   private def initialize(): Unit = this.synchronized {
+    logInfo(s"endpoint = $endpoint, project=$project, logstore = $logstore")
     if (loghubClient == null) {
-      loghubClient = LoghubClient.getOrCreate(accessKeyId,
+      loghubClient = LoghubClient.getOrCreate(endpoint,
+        accessKeyId,
         accessKeySecret,
-        endpoint)
+        consumerGroup)
     }
     if (zkHelper == null) {
       zkHelper = ZkHelper.getOrCreate(zkParams, checkpointDir, project, logstore)

@@ -21,10 +21,15 @@ import com.aliyun.openservices.log.Client;
 import com.aliyun.openservices.log.common.Consts;
 import com.aliyun.openservices.log.common.ConsumerGroup;
 import com.aliyun.openservices.log.exception.LogException;
-import com.aliyun.openservices.log.response.*;
+import com.aliyun.openservices.log.response.BatchGetLogResponse;
+import com.aliyun.openservices.log.response.ConsumerGroupCheckPointResponse;
+import com.aliyun.openservices.log.response.CreateConsumerGroupResponse;
+import com.aliyun.openservices.log.response.GetCursorResponse;
+import com.aliyun.openservices.log.response.GetCursorTimeResponse;
+import com.aliyun.openservices.log.response.GetHistogramsResponse;
+import com.aliyun.openservices.log.response.ListShardResponse;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.spark.streaming.aliyun.logservice.utils.VersionInfoUtils;
 
 public class LoghubClientAgent {
     private static final Log LOG = LogFactory.getLog(LoghubClientAgent.class);
@@ -33,7 +38,10 @@ public class LoghubClientAgent {
 
     public LoghubClientAgent(String endpoint, String accessId, String accessKey) {
         this.client = new Client(endpoint, accessId, accessKey);
-        this.client.setUserAgent(VersionInfoUtils.getUserAgent());
+    }
+
+    public void setUserAgent(String userAgent) {
+        client.setUserAgent(userAgent);
     }
 
     public ListShardResponse ListShard(String logProject, String logstore)
