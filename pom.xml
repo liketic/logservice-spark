@@ -31,8 +31,7 @@
     </modules>
 
     <properties>
-        <scala.version>2.11.7</scala.version>
-        <scala.binary.version>2.11</scala.binary.version>
+        <scala.binary.version>2.12</scala.binary.version>
         <spark.version>2.4.3</spark.version>
         <loghub.client.version>0.6.15</loghub.client.version>
         <aliyun.log.version>0.6.37</aliyun.log.version>
