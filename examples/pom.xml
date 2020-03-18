@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
         <groupId>com.aliyun.openservices</groupId>
-        <artifactId>logservice-spark-connector-parent</artifactId>
+        <artifactId>logservice-spark-connector-parent_2.12</artifactId>
         <version>1.0.5</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
@@ -77,7 +77,7 @@
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
-                <version>3.1.0</version>
+                <version>4.3.1</version>
                 <executions>
                     <execution>
                         <id>scala-compile-first</id>

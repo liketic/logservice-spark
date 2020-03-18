@@ -24,7 +24,7 @@ import com.alibaba.fastjson.JSONObject
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.aliyun.logservice.LoghubSourceProvider._
-import org.apache.spark.util.NextIterator
+import org.apache.spark.util.{NextIterator, TaskCompletionListener}
 
 import scala.collection.JavaConversions._
 
@@ -46,7 +46,12 @@ class LoghubIterator(zkHelper: ZkHelper,
 
   private val inputMetrics = context.taskMetrics.inputMetrics
 
-  context.addTaskCompletionListener { _ => closeIfNeeded() }
+//  context.addTaskCompletionListener { _ => closeIfNeeded() }
+  context.addTaskCompletionListener(new TaskCompletionListener {
+    override def onTaskCompletion(context: TaskContext): Unit = {
+      closeIfNeeded()
+    }
+  })
 
   private def unlock(): Unit = {
     if (!unlocked) {

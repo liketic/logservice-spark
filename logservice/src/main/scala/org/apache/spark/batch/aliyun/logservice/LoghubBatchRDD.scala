@@ -20,12 +20,11 @@ import java.util.concurrent.LinkedBlockingQueue
 
 import com.alibaba.fastjson.JSONObject
 import com.aliyun.openservices.log.response.BatchGetLogResponse
-
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.aliyun.logservice.LoghubSourceProvider._
 import org.apache.spark.streaming.aliyun.logservice.LoghubClientAgent
-import org.apache.spark.util.NextIterator
+import org.apache.spark.util.{NextIterator, TaskCompletionListener}
 
 class LoghubBatchRDD(
     @transient sc: SparkContext,
@@ -93,7 +92,7 @@ class LoghubBatchRDD(
     // scalastyle:on
     shards.flatMap(shard => {
       val shardId = shard.GetShardId()
-      slices.map { case ((idx, st, et)) =>
+      slices.map { case (idx, st, et) =>
         val startCursor = client.GetCursor(project, logStore, shardId, st).GetCursor()
         val endCursor = client.GetCursor(project, logStore, shardId, et).GetCursor()
         val logGroupStep = sc.getConf.get("spark.loghub.batchGet.step", "100").toInt
@@ -147,7 +146,11 @@ class LoghubBatchRDD(
     var logCache = new LinkedBlockingQueue[String]()
     var curCursor: String = startCursor
 
-    context.addTaskCompletionListener(context => closeIfNeeded())
+    context.addTaskCompletionListener(new TaskCompletionListener {
+      override def onTaskCompletion(context: TaskContext): Unit = {
+        closeIfNeeded()
+      }
+    })
 
     override protected def getNext(): String = {
       if (logCache.isEmpty) {

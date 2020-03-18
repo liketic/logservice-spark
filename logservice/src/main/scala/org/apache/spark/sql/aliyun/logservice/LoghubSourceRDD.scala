@@ -19,6 +19,8 @@ package org.apache.spark.sql.aliyun.logservice
 import java.util.Base64
 import java.util.concurrent.LinkedBlockingQueue
 
+import org.apache.spark.util.TaskCompletionListener
+
 // scalastyle:off
 import scala.collection.JavaConversions._
 // scalastyle:on
@@ -96,9 +98,11 @@ class LoghubSourceRDD(
         private val valueConverters =
           schema.map(f => Utils.makeConverter(f.name, f.dataType, f.nullable)).toArray
 
-        context.addTaskCompletionListener {
-          _ => closeIfNeeded()
-        }
+        context.addTaskCompletionListener(new TaskCompletionListener {
+          override def onTaskCompletion(context: TaskContext): Unit = {
+            closeIfNeeded()
+          }
+        })
 
         fetchNextBatch()
 
