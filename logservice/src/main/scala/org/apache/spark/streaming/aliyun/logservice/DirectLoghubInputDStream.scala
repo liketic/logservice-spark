@@ -151,19 +151,20 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
       } else if (zkHelper.tryLock(shardId)) {
         val start = zkHelper.readOffset(shardId)
         var end: String = null
+        var skip = false
         if (shard.getStatus.equalsIgnoreCase("readonly")) {
           end = endCursorForReadOnlyShard(shardId)
           if (start.equals(end)) {
             logInfo(s"Skip shard $shardId which start and end cursor both are $start")
             readOnlyShardCache.put(shardId, end)
             zkHelper.unlock(shardId)
-          } else {
-            shardOffsets.add(OffsetRange(shardId, start, end))
-            logInfo(s"Shard $shardId range [$start, $end)")
+            skip = true
           }
-        } else {
+        }
+        if (!skip && zkHelper.checkValidOffset(shardId, start)) {
           shardOffsets.add(OffsetRange(shardId, start, end))
           logInfo(s"Shard $shardId range [$start, $end)")
+          zkHelper.markOffset(shardId, start)
         }
       }
     })
@@ -206,11 +207,13 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
       pool = ThreadUtils.newDaemonCachedThreadPool("commit-pool", 16)
     }
     offsetRanges.foreach(r => {
-      pool.submit(new Runnable {
-        override def run(): Unit = {
-          loghubClient.safeUpdateCheckpoint(project, logstore, consumerGroup, r.shardId, r.fromCursor)
-        }
-      })
+      // Get end cursor of this RDD
+      var end = zkHelper.readEndOffset(r.rddID, r.shardId)
+      if (end == null) {
+        end = r.fromCursor
+      }
+      loghubClient.safeUpdateCheckpoint(project, logstore, consumerGroup, r.shardId, end)
+      zkHelper.cleanupRDD(r.rddID, r.shardId)
     })
   }
 
