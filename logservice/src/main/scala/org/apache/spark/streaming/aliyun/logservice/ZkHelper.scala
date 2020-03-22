@@ -74,7 +74,7 @@ class ZkHelper(zkParams: Map[String, String],
     new String(bytes, StandardCharsets.UTF_8).toLong
   }
 
-  def checkValidOffset(shard: Int, cursor: String): Boolean = {
+  def checkOffsetAfterPrevious(shard: Int, cursor: String): Boolean = {
     val prev = latestOffsets.get(shard)
     if (prev == null) {
       return true
@@ -108,19 +108,19 @@ class ZkHelper(zkParams: Map[String, String],
 
   def cleanupRDD(rddID: Int, shard: Int): Unit = {
     initialize()
-    deleteIfExists(s"$rddRangeDir/$rddID/$shard")
+    deleteIfExists(s"$rddRangeDir/$shard/$rddID")
   }
 
   def readEndOffset(rddID: Int, shardId: Int): String = {
     initialize()
     // TODO Wait data exists
-    val path = s"$rddRangeDir/$rddID/$shardId"
+    val path = s"$rddRangeDir/$shardId/$rddID"
     zkClient.readData(path, true)
   }
 
   def tryMarkEndOffset(rddID: Int, shardId: Int, cursor: String): Boolean = {
     initialize()
-    val path = s"$rddRangeDir/$rddID/$shardId"
+    val path = s"$rddRangeDir/$shardId/$rddID"
     if (zkClient.exists(path)) {
       false
     } else {
@@ -153,7 +153,7 @@ class ZkHelper(zkParams: Map[String, String],
     initialize()
     val lockFile = s"$lockDir/$shard"
     try {
-      zkClient.createPersistent(lockFile, false)
+      zkClient.createPersistent(lockFile, true)
       true
     } catch {
       case _: ZkNodeExistsException =>

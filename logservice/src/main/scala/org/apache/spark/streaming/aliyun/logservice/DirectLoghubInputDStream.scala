@@ -165,7 +165,7 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
             skip = true
           }
         }
-        if (!skip && zkHelper.checkValidOffset(shardId, start)) {
+        if (!skip && zkHelper.checkOffsetAfterPrevious(shardId, start)) {
           shardOffsets.add(InternalOffsetRange(shardId, start, end))
           logInfo(s"Shard $shardId start from $start")
           zkHelper.markOffset(shardId, start)
