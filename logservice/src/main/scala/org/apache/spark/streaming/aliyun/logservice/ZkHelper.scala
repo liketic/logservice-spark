@@ -36,14 +36,13 @@ class ZkHelper(zkParams: Map[String, String],
   private val zkDir = s"$checkpointDir/commit/$project/$logstore"
   private val offsetDir = s"$zkDir/offset"
   private val lockDir = s"$zkDir/lock"
-  private val rddRangeDir = s"$zkDir/range"
+  private val rddRangeDir = s"$zkDir/rdd"
 
   @transient private var zkClient: ZkClient = _
   @transient private val latestOffsets: util.Map[Int, String] = new java.util.concurrent.ConcurrentHashMap[Int, String]()
 
   def initialize(): Unit = synchronized {
     if (zkClient != null) {
-      // already initialized
       return
     }
     val zkConnect = zkParams.getOrElse("zookeeper.connect", "localhost:2181")
@@ -139,12 +138,12 @@ class ZkHelper(zkParams: Map[String, String],
 
   def readOffset(shardId: Int): String = {
     initialize()
-    zkClient.readData(s"$offsetDir/$shardId.shard", true)
+    zkClient.readData(s"$offsetDir/$shardId", true)
   }
 
   def saveOffset(shard: Int, cursor: String): Unit = {
     initialize()
-    val path = s"$offsetDir/$shard.shard"
+    val path = s"$offsetDir/$shard"
     logDebug(s"Save $cursor to $path")
     writeData(path, cursor)
   }
