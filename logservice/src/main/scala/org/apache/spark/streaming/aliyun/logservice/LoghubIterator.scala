@@ -16,8 +16,6 @@
  */
 package org.apache.spark.streaming.aliyun.logservice
 
-import java.nio.charset.StandardCharsets
-import java.util.Base64
 import java.util.concurrent.LinkedBlockingQueue
 
 import com.alibaba.fastjson.JSONObject
@@ -28,15 +26,16 @@ import org.apache.spark.util.NextIterator
 
 import scala.collection.JavaConversions._
 
-class LoghubIterator(zkHelper: ZkHelper,
+class LoghubIterator(rddID: Int,
+                     zkHelper: ZkHelper,
                      client: LoghubClientAgent,
                      part: ShardPartition,
                      context: TaskContext)
   extends NextIterator[String] with Logging {
 
   private var hasRead: Int = 0
-  private var cursor = part.startCursor
-  private var endCursor = part.endCursor
+  private var cursor = part.fromCursor
+  private var endCursor: String = _
   private val shardId = part.shardId
   private val maxRecordsPerShard = part.maxRecordsPerShard
   private var buffer = new LinkedBlockingQueue[String](maxRecordsPerShard)
@@ -51,6 +50,7 @@ class LoghubIterator(zkHelper: ZkHelper,
   private def unlock(): Unit = {
     if (!unlocked) {
       zkHelper.unlock(shardId)
+      logDebug(s"unlock shard $shardId")
       unlocked = true
     }
   }
@@ -63,9 +63,10 @@ class LoghubIterator(zkHelper: ZkHelper,
     }
     if (buffer.isEmpty) {
       finished = true
-      zkHelper.saveOffset(shardId, cursor)
+      if (zkHelper.tryMarkEndOffset(rddID, shardId, cursor)) {
+        zkHelper.saveOffset(shardId, cursor)
+      }
       unlock()
-      logDebug(s"unlock shard $shardId")
       null
     } else {
       hasRead += 1
@@ -84,31 +85,10 @@ class LoghubIterator(zkHelper: ZkHelper,
     }
   }
 
-  private def decideCursorToTs(cursor: String): Long = {
-    val bytes = Base64.getDecoder.decode(cursor.getBytes(StandardCharsets.UTF_8))
-    new String(bytes, StandardCharsets.UTF_8).toLong
-  }
-
   private def fetchEndCursor(): Unit = {
     if (!isFetchEndCursorCalled) {
-      if (endCursor != null) {
-        // For read only shard, the cursor range will be provided
-        isFetchEndCursorCalled = true
-        return
-      }
-      endCursor = zkHelper.readOffset(shardId)
-      if (cursor.equals(endCursor)) {
-        // end cursor was not updated which means we're the first fetching.
-        endCursor = null
-      } else {
-        val beginTs = decideCursorToTs(cursor)
-        val endTs = decideCursorToTs(endCursor)
-        if (beginTs >= endTs) {
-          // End cursor maybe a earlier cursor, this should
-          // never happen in normal case.
-          endCursor = null
-        }
-      }
+      // try to fetch end cursor of this shard in current RDD
+      endCursor = zkHelper.readEndOffset(rddID, shardId)
       isFetchEndCursorCalled = true
     }
   }

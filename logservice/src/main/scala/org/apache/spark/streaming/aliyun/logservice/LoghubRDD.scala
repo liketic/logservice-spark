@@ -29,7 +29,7 @@ class LoghubRDD(@transient sc: SparkContext,
                 val accessKeySecret: String,
                 val endpoint: String,
                 val zkParams: Map[String, String],
-                val offsetRanges: Array[OffsetRange],
+                val offsets: Array[InternalOffsetRange],
                 val maxRecordsPerShard: Int,
                 val checkpointDir: String)
   extends RDD[String](sc, Nil) with Logging with HasOffsetRanges {
@@ -47,21 +47,17 @@ class LoghubRDD(@transient sc: SparkContext,
     super.count()
   }
 
+  def offsetRanges: Array[OffsetRange] = {
+    // Hack RDD id here
+    offsets.map(r => OffsetRange(id, r.shardId, r.fromCursor, r.untilCursor))
+  }
+
   @DeveloperApi
   override def compute(split: Partition, context: TaskContext): Iterator[String] = {
     initialize()
     val partition = split.asInstanceOf[ShardPartition]
-    try {
-      val iter = new LoghubIterator(
-        zkHelper,
-        client,
-        partition,
-        context)
-      new InterruptibleIterator[String](context, iter)
-    } catch {
-      case _: Exception =>
-        Iterator.empty
-    }
+    val iter = new LoghubIterator(id, zkHelper, client, partition, context)
+    new InterruptibleIterator[String](context, iter)
   }
 
   override protected def getPartitions: Array[Partition] = {
@@ -76,7 +72,6 @@ class LoghubRDD(@transient sc: SparkContext,
         accessKeySecret,
         endpoint,
         p.fromCursor,
-        p.untilCursor,
         batchSize).asInstanceOf[Partition]
     }
   }

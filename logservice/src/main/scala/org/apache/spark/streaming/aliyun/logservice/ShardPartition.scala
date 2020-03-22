@@ -27,8 +27,7 @@ case class ShardPartition(rddId: Int,
                           accessKeyId: String,
                           accessKeySecret: String,
                           endpoint: String,
-                          startCursor: String,
-                          endCursor: String,
+                          fromCursor: String,
                           batchSize: Int = 100) extends Partition {
   override def hashCode(): Int = 41 * (41 + rddId) + shardId
 

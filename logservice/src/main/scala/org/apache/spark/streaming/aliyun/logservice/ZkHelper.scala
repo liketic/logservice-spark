@@ -18,6 +18,7 @@ package org.apache.spark.streaming.aliyun.logservice
 
 import java.nio.charset.StandardCharsets
 import java.util
+import java.util.Base64
 
 import org.I0Itec.zkclient.ZkClient
 import org.I0Itec.zkclient.exception.{ZkNoNodeException, ZkNodeExistsException}
@@ -33,20 +34,21 @@ class ZkHelper(zkParams: Map[String, String],
                logstore: String) extends Logging {
 
   private val zkDir = s"$checkpointDir/commit/$project/$logstore"
+  private val offsetDir = s"$zkDir/offset"
+  private val lockDir = s"$zkDir/lock"
+  private val rddRangeDir = s"$zkDir/rdd"
 
   @transient private var zkClient: ZkClient = _
+  @transient private val latestOffsets: util.Map[Int, String] = new java.util.concurrent.ConcurrentHashMap[Int, String]()
 
   def initialize(): Unit = synchronized {
     if (zkClient != null) {
-      // already initialized
       return
     }
     val zkConnect = zkParams.getOrElse("zookeeper.connect", "localhost:2181")
     val zkSessionTimeoutMs = zkParams.getOrElse("zookeeper.session.timeout.ms", "6000").toInt
     val zkConnectionTimeoutMs =
       zkParams.getOrElse("zookeeper.connection.timeout.ms", zkSessionTimeoutMs.toString).toInt
-    logInfo(s"zkDir = $zkDir")
-
     zkClient = new ZkClient(zkConnect, zkSessionTimeoutMs, zkConnectionTimeoutMs)
     zkClient.setZkSerializer(new ZkSerializer() {
       override def serialize(data: scala.Any): Array[Byte] = {
@@ -62,50 +64,95 @@ class ZkHelper(zkParams: Map[String, String],
     })
   }
 
+  def markOffset(shard: Int, cursor: String): Unit = synchronized {
+    latestOffsets.put(shard, cursor)
+  }
+
+  private def decideCursorToTs(cursor: String): Long = {
+    val bytes = Base64.getDecoder.decode(cursor.getBytes(StandardCharsets.UTF_8))
+    new String(bytes, StandardCharsets.UTF_8).toLong
+  }
+
+  def checkOffsetAfterPrevious(shard: Int, cursor: String): Boolean = {
+    val prev = latestOffsets.get(shard)
+    if (prev == null) {
+      return true
+    }
+    val pts = decideCursorToTs(prev)
+    val cts = decideCursorToTs(cursor)
+    if (cts >= pts) {
+      // maybe previous fetch returned nothing
+      return true
+    }
+    logWarning(s"invalid cursor $cursor, prev $prev")
+    false
+  }
+
   def mkdir(): Unit = {
     initialize()
     try {
-      // Check if zookeeper is usable. Direct loghub api depends on zookeeper.
-      if (!zkClient.exists(zkDir)) {
+      if (zkClient.exists(zkDir)) {
+        zkClient.getChildren(zkDir).foreach(child => {
+          zkClient.deleteRecursive(s"$zkDir/$child")
+        })
+      } else {
         zkClient.createPersistent(zkDir, true)
-        return
       }
     } catch {
       case e: Exception =>
-        throw new RuntimeException("Loghub direct api depends on zookeeper. Make sure that " +
-          "zookeeper is on active service.", e)
+        throw new RuntimeException("Loghub direct api depends on zookeeper. Make sure " +
+          "zookeeper is available.", e)
     }
-    try {
-      zkClient.getChildren(zkDir).foreach(child => {
-        zkClient.delete(s"$zkDir/$child")
-      })
-    } catch {
-      case _: ZkNoNodeException =>
-        logDebug("If this is the first time to run, it is fine to not find any commit data in " +
-          "zookeeper.")
+  }
+
+  def cleanupRDD(rddID: Int, shard: Int): Unit = {
+    initialize()
+    deleteIfExists(s"$rddRangeDir/$shard/$rddID")
+  }
+
+  def readEndOffset(rddID: Int, shardId: Int): String = {
+    initialize()
+    // TODO Wait data exists
+    val path = s"$rddRangeDir/$shardId/$rddID"
+    zkClient.readData(path, true)
+  }
+
+  def tryMarkEndOffset(rddID: Int, shardId: Int, cursor: String): Boolean = {
+    initialize()
+    val path = s"$rddRangeDir/$shardId/$rddID"
+    if (zkClient.exists(path)) {
+      false
+    } else {
+      zkClient.createPersistent(path, true)
+      zkClient.writeData(path, cursor)
+      true
     }
+  }
+
+  private def writeData(path: String, data: String): Unit = {
+    if (!zkClient.exists(path)) {
+      zkClient.createPersistent(path, true)
+    }
+    zkClient.writeData(path, data)
   }
 
   def readOffset(shardId: Int): String = {
     initialize()
-    zkClient.readData(s"$zkDir/$shardId.shard")
+    zkClient.readData(s"$offsetDir/$shardId", true)
   }
 
   def saveOffset(shard: Int, cursor: String): Unit = {
     initialize()
-    val cursorFile = s"$zkDir/$shard.shard"
-    logDebug(s"Save $cursor to $cursorFile")
-    if (!zkClient.exists(cursorFile)) {
-      zkClient.createPersistent(cursorFile, true)
-    }
-    zkClient.writeData(cursorFile, cursor)
+    val path = s"$offsetDir/$shard"
+    logDebug(s"Save $cursor to $path")
+    writeData(path, cursor)
   }
 
   def tryLock(shard: Int): Boolean = {
     initialize()
-    val lockFile = s"$zkDir/$shard.lock"
+    val lockFile = s"$lockDir/$shard"
     try {
-      zkClient.createPersistent(lockFile, false)
+      zkClient.createPersistent(lockFile, true)
       true
     } catch {
       case _: ZkNodeExistsException =>
@@ -114,14 +161,18 @@ class ZkHelper(zkParams: Map[String, String],
     }
   }
 
-  def unlock(shard: Int): Unit = {
-    initialize()
+  private def deleteIfExists(path: String): Unit = {
     try {
-      zkClient.delete(s"$zkDir/$shard.lock")
+      zkClient.delete(path)
     } catch {
       case _: ZkNoNodeException =>
       // ignore
     }
+  }
+
+  def unlock(shard: Int): Unit = {
+    initialize()
+    deleteIfExists(s"$lockDir/$shard")
   }
 
   def close(): Unit = synchronized {
