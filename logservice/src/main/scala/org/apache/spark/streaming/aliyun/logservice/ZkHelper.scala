@@ -34,6 +34,9 @@ class ZkHelper(zkParams: Map[String, String],
                logstore: String) extends Logging {
 
   private val zkDir = s"$checkpointDir/commit/$project/$logstore"
+  private val offsetDir = s"$zkDir/offset"
+  private val lockDir = s"$zkDir/lock"
+  private val rddRangeDir = s"$zkDir/range"
 
   @transient private var zkClient: ZkClient = _
   @transient private val latestOffsets: util.Map[Int, String] = new java.util.concurrent.ConcurrentHashMap[Int, String]()
@@ -47,8 +50,6 @@ class ZkHelper(zkParams: Map[String, String],
     val zkSessionTimeoutMs = zkParams.getOrElse("zookeeper.session.timeout.ms", "6000").toInt
     val zkConnectionTimeoutMs =
       zkParams.getOrElse("zookeeper.connection.timeout.ms", zkSessionTimeoutMs.toString).toInt
-    logInfo(s"zkDir = $zkDir")
-
     zkClient = new ZkClient(zkConnect, zkSessionTimeoutMs, zkConnectionTimeoutMs)
     zkClient.setZkSerializer(new ZkSerializer() {
       override def serialize(data: scala.Any): Array[Byte] = {
@@ -88,11 +89,6 @@ class ZkHelper(zkParams: Map[String, String],
     false
   }
 
-  def cleanupRDD(rddID: Int, shard: Int): Unit = {
-    initialize()
-    deleteIfExists(s"$zkDir/$rddID/$shard")
-  }
-
   def mkdir(): Unit = {
     initialize()
     try {
@@ -110,21 +106,21 @@ class ZkHelper(zkParams: Map[String, String],
     }
   }
 
-  def readOffset(shardId: Int): String = {
+  def cleanupRDD(rddID: Int, shard: Int): Unit = {
     initialize()
-    zkClient.readData(s"$zkDir/$shardId.shard", true)
+    deleteIfExists(s"$rddRangeDir/$rddID/$shard")
   }
 
   def readEndOffset(rddID: Int, shardId: Int): String = {
     initialize()
     // TODO Wait data exists
-    val path = s"$zkDir/$shardId/$rddID"
+    val path = s"$rddRangeDir/$rddID/$shardId"
     zkClient.readData(path, true)
   }
 
   def tryMarkEndOffset(rddID: Int, shardId: Int, cursor: String): Boolean = {
     initialize()
-    val path = s"$zkDir/$shardId/$rddID"
+    val path = s"$rddRangeDir/$rddID/$shardId"
     if (zkClient.exists(path)) {
       false
     } else {
@@ -141,16 +137,21 @@ class ZkHelper(zkParams: Map[String, String],
     zkClient.writeData(path, data)
   }
 
+  def readOffset(shardId: Int): String = {
+    initialize()
+    zkClient.readData(s"$offsetDir/$shardId.shard", true)
+  }
+
   def saveOffset(shard: Int, cursor: String): Unit = {
     initialize()
-    val path = s"$zkDir/$shard.shard"
+    val path = s"$offsetDir/$shard.shard"
     logDebug(s"Save $cursor to $path")
     writeData(path, cursor)
   }
 
   def tryLock(shard: Int): Boolean = {
     initialize()
-    val lockFile = s"$zkDir/$shard.lock"
+    val lockFile = s"$lockDir/$shard"
     try {
       zkClient.createPersistent(lockFile, false)
       true
@@ -172,7 +173,7 @@ class ZkHelper(zkParams: Map[String, String],
 
   def unlock(shard: Int): Unit = {
     initialize()
-    deleteIfExists(s"$zkDir/$shard.lock")
+    deleteIfExists(s"$lockDir/$shard")
   }
 
   def close(): Unit = synchronized {
