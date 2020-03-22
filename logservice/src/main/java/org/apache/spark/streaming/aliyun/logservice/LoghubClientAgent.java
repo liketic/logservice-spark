@@ -74,6 +74,17 @@ public class LoghubClientAgent {
         return RetryUtil.call(() -> client.CreateConsumerGroup(project, logstore, consumerGroup));
     }
 
+    public String fetchCheckpoint(String project, String logstore, String consumerGroup, int shard)
+            throws Exception {
+        return RetryUtil.call(() -> {
+           ConsumerGroupCheckPointResponse response = client.GetCheckPoint(project, logstore, consumerGroup, shard);
+           if (response != null && !response.getCheckPoints().isEmpty()) {
+               return response.getCheckPoints().get(0).getCheckPoint();
+           }
+           return null;
+        });
+    }
+
     public ConsumerGroupCheckPointResponse ListCheckpoints(String project, String logstore, String consumerGroup)
             throws Exception {
         return RetryUtil.call(() -> client.GetCheckPoint(project, logstore, consumerGroup));

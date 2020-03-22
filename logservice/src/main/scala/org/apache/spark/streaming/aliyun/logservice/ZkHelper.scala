@@ -98,15 +98,15 @@ class ZkHelper(zkParams: Map[String, String],
     try {
       if (zkClient.exists(zkDir)) {
         zkClient.getChildren(zkDir).foreach(child => {
-          zkClient.delete(s"$zkDir/$child")
+          zkClient.deleteRecursive(s"$zkDir/$child")
         })
       } else {
         zkClient.createPersistent(zkDir, true)
       }
     } catch {
       case e: Exception =>
-        throw new RuntimeException("Loghub direct api depends on zookeeper. Make sure that " +
-          "zookeeper is on available.", e)
+        throw new RuntimeException("Loghub direct api depends on zookeeper. Make sure " +
+          "zookeeper is available.", e)
     }
   }
 

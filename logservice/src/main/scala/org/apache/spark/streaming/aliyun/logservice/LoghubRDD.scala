@@ -29,7 +29,7 @@ class LoghubRDD(@transient sc: SparkContext,
                 val accessKeySecret: String,
                 val endpoint: String,
                 val zkParams: Map[String, String],
-                val offsets: Array[OffsetRange],
+                val offsets: Array[InternalOffsetRange],
                 val maxRecordsPerShard: Int,
                 val checkpointDir: String)
   extends RDD[String](sc, Nil) with Logging with HasOffsetRanges {
@@ -48,7 +48,7 @@ class LoghubRDD(@transient sc: SparkContext,
   }
 
   def offsetRanges: Array[OffsetRange] = {
-    // TODO ugly Hack rdd id here
+    // Hack RDD id here
     offsets.map(r => OffsetRange(id, r.shardId, r.fromCursor, r.untilCursor))
   }
 

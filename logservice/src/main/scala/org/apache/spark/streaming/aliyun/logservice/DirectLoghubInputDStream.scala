@@ -143,27 +143,31 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
 
   override def compute(validTime: Time): Option[RDD[String]] = {
     initialize()
-    val shardOffsets = new ArrayBuffer[OffsetRange]()
+    val shardOffsets = new ArrayBuffer[InternalOffsetRange]()
     loghubClient.ListShard(project, logstore).GetShards().foreach(shard => {
       val shardId = shard.GetShardId()
       if (readOnlyShardCache.contains(shardId)) {
         logInfo(s"There is no data to consume from shard $shardId.")
       } else if (zkHelper.tryLock(shardId)) {
-        val start = zkHelper.readOffset(shardId)
+        var start = zkHelper.readOffset(shardId)
+        if (start == null || start.isEmpty) {
+          // this is the first fetching of this shard
+          start = fetchCheckpointOrInitialCursor(shardId)
+        }
         var end: String = null
         var skip = false
         if (shard.getStatus.equalsIgnoreCase("readonly")) {
           end = endCursorForReadOnlyShard(shardId)
           if (start.equals(end)) {
-            logInfo(s"Skip shard $shardId which start and end cursor both are $start")
+            logInfo(s"Skip empty $shardId end cursor $start")
             readOnlyShardCache.put(shardId, end)
             zkHelper.unlock(shardId)
             skip = true
           }
         }
         if (!skip && zkHelper.checkValidOffset(shardId, start)) {
-          shardOffsets.add(OffsetRange(shardId, start, end))
-          logInfo(s"Shard $shardId range [$start, $end)")
+          shardOffsets.add(InternalOffsetRange(shardId, start, end))
+          logInfo(s"Shard $shardId start from $start")
           zkHelper.markOffset(shardId, start)
         }
       }
@@ -261,6 +265,18 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
         return checkpoint
       }
     }
+    fetchInitialCursor(shardId)
+  }
+
+  private def fetchCheckpointOrInitialCursor(shardId: Int): String = {
+    var cursor = loghubClient.fetchCheckpoint(project, logstore, consumerGroup, shardId)
+    if (cursor == null || cursor.isEmpty) {
+      cursor = fetchCheckpointOrInitialCursor(shardId)
+    }
+    cursor
+  }
+
+  private def fetchInitialCursor(shardId: Int): String = {
     val cursor = mode match {
       case LogHubCursorPosition.END_CURSOR =>
         loghubClient.GetCursor(project, logstore, shardId, CursorMode.END)

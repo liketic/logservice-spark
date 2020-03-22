@@ -26,6 +26,7 @@ package org.apache.spark.streaming.aliyun.logservice
  */
 case class OffsetRange(rddID: Int, shardId: Int, fromCursor: String, untilCursor: String)
 
+case class InternalOffsetRange(shardId: Int, fromCursor: String, untilCursor: String)
 
 trait HasOffsetRanges {
   def offsetRanges: Array[OffsetRange]
