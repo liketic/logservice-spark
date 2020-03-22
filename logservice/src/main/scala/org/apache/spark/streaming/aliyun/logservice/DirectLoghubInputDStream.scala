@@ -211,13 +211,17 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
       pool = ThreadUtils.newDaemonCachedThreadPool("commit-pool", 16)
     }
     offsetRanges.foreach(r => {
-      // Get end cursor of this RDD
-      var end = zkHelper.readEndOffset(r.rddID, r.shardId)
-      if (end == null) {
-        end = r.fromCursor
-      }
-      loghubClient.safeUpdateCheckpoint(project, logstore, consumerGroup, r.shardId, end)
-      zkHelper.cleanupRDD(r.rddID, r.shardId)
+      pool.submit(new Runnable {
+        override def run(): Unit = {
+          var end = zkHelper.readEndOffset(r.rddID, r.shardId)
+          if (end == null) {
+            // TODO Double check this
+            end = r.fromCursor
+          }
+          loghubClient.safeUpdateCheckpoint(project, logstore, consumerGroup, r.shardId, end)
+          zkHelper.cleanupRDD(r.rddID, r.shardId)
+        }
+      })
     })
   }
 
