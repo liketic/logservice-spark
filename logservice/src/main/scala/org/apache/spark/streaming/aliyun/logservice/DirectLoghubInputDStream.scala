@@ -19,7 +19,7 @@ package org.apache.spark.streaming.aliyun.logservice
 import java.util.concurrent.ThreadPoolExecutor
 
 import com.aliyun.openservices.log.common.Consts.CursorMode
-import com.aliyun.openservices.log.common.ConsumerGroup
+import com.aliyun.openservices.log.common.{ConsumerGroup, FastLogGroup}
 import com.aliyun.openservices.log.exception.LogException
 import com.aliyun.openservices.loghub.client.config.LogHubCursorPosition
 import com.aliyun.openservices.loghub.client.exceptions.LogHubClientWorkerException
@@ -37,8 +37,9 @@ import org.apache.spark.util.ThreadUtils
 import scala.collection.JavaConversions._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+import scala.reflect.ClassTag
 
-class DirectLoghubInputDStream(_ssc: StreamingContext,
+class DirectLoghubInputDStream[T: ClassTag](_ssc: StreamingContext,
                                project: String,
                                logstore: String,
                                consumerGroup: String,
@@ -47,8 +48,9 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
                                endpoint: String,
                                zkParams: Map[String, String],
                                mode: LogHubCursorPosition,
-                               cursorStartTime: Long = -1L)
-  extends InputDStream[String](_ssc) with Logging with CanCommitOffsets {
+                               cursorStartTime: Long = -1L,
+                               logGroupDecoder: FastLogGroup => ArrayBuffer[T])
+  extends InputDStream[T](_ssc) with Logging with CanCommitOffsets {
   @transient private var zkHelper: ZkHelper = _
   @transient private var loghubClient: LoghubClientAgent = _
 
@@ -141,7 +143,7 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
     endCursor
   }
 
-  override def compute(validTime: Time): Option[RDD[String]] = {
+  override def compute(validTime: Time): Option[RDD[T]] = {
     initialize()
     val shardOffsets = new ArrayBuffer[InternalOffsetRange]()
     loghubClient.ListShard(project, logstore).GetShards().foreach(shard => {
@@ -183,7 +185,8 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
       zkParams,
       shardOffsets.toArray,
       maxRecordsPerShard(shardOffsets.size),
-      checkpointDir).setName(s"LoghubRDD-${validTime.toString()}")
+      checkpointDir,
+      logGroupDecoder).setName(s"LoghubRDD-${validTime.toString()}")
     val description = shardOffsets.map { p =>
       val offset = "offset: [ %1$-30s to %2$-30s ]".format(p.fromCursor, p.untilCursor)
       s"shardId: ${p.shardId}\t $offset"

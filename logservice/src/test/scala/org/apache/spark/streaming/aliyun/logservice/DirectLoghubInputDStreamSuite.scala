@@ -17,14 +17,17 @@
 
 package org.apache.spark.streaming.aliyun.logservice
 
-import com.aliyun.openservices.log.common.Consts
+import com.alibaba.fastjson.JSONObject
+import com.aliyun.openservices.log.common.{Consts, FastLogGroup}
 import com.aliyun.openservices.loghub.client.config.LogHubCursorPosition
+import org.apache.spark.sql.aliyun.logservice.LoghubSourceProvider.{__SOURCE__, __TIME__, __TOPIC__}
 
 import scala.collection.mutable
-
 import org.apache.spark.{SparkConf, SparkFunSuite}
 import org.apache.spark.sql.aliyun.logservice.LoghubTestUtils
 import org.apache.spark.streaming.{Milliseconds, StreamingContext}
+
+import scala.collection.mutable.ArrayBuffer
 
 class DirectLoghubInputDStreamSuite extends SparkFunSuite {
 
@@ -35,8 +38,34 @@ class DirectLoghubInputDStreamSuite extends SparkFunSuite {
     .setMaster("local")
   private var logstore: String = _
 
+  def myDecoder(logGroup: FastLogGroup): ArrayBuffer[String] = {
+    val logCount = logGroup.getLogsCount
+    val tagCount = logGroup.getLogTagsCount
+    val topic = logGroup.getTopic
+    val source = logGroup.getSource
+    val result = new ArrayBuffer[String](logCount)
+    for (i <- 0 until logCount) {
+      val log = logGroup.getLogs(i)
+      val fieldCount = log.getContentsCount
+      val obj = new JSONObject(fieldCount + tagCount + 3)
+      obj.put(__TIME__, log.getTime)
+      obj.put(__TOPIC__, topic)
+      obj.put(__SOURCE__, source)
+      for (j <- 0 until log.getContentsCount) {
+        val field = log.getContents(j)
+        obj.put(field.getKey, field.getValue)
+      }
+      for (j <- 0 until logGroup.getLogTagsCount) {
+        val tag = logGroup.getLogTags(j)
+        obj.put("__tag__:".concat(tag.getKey), tag.getValue)
+      }
+      result += obj.toJSONString
+    }
+    result
+  }
+
   test("test checkpoint empty will be filtered") {
-    val stream = new DirectLoghubInputDStream(
+    val stream = new DirectLoghubInputDStream[String](
       sc,
       testUtils.logProject,
       logstore,
@@ -45,7 +74,9 @@ class DirectLoghubInputDStreamSuite extends SparkFunSuite {
       testUtils.accessKeySecret,
       testUtils.endpoint,
       zkParas,
-      LogHubCursorPosition.BEGIN_CURSOR
+      LogHubCursorPosition.BEGIN_CURSOR,
+      -1,
+      myDecoder
     )
     val client = new LoghubClientAgent(testUtils.endpoint,
       testUtils.accessKeyId,
@@ -73,7 +104,9 @@ class DirectLoghubInputDStreamSuite extends SparkFunSuite {
       testUtils.accessKeySecret,
       testUtils.endpoint,
       zkParas,
-      LogHubCursorPosition.BEGIN_CURSOR
+      LogHubCursorPosition.BEGIN_CURSOR,
+      -1,
+      myDecoder
     )
     val client = new LoghubClientAgent(testUtils.endpoint,
       testUtils.accessKeyId,

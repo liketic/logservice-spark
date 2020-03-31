@@ -18,27 +18,29 @@ package org.apache.spark.streaming.aliyun.logservice
 
 import java.util.concurrent.LinkedBlockingQueue
 
-import com.alibaba.fastjson.JSONObject
+import com.aliyun.openservices.log.common.FastLogGroup
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.aliyun.logservice.LoghubSourceProvider._
 import org.apache.spark.util.NextIterator
 
 import scala.collection.JavaConversions._
+import scala.collection.mutable.ArrayBuffer
+import scala.reflect.ClassTag
 
-class LoghubIterator(rddID: Int,
-                     zkHelper: ZkHelper,
-                     client: LoghubClientAgent,
-                     part: ShardPartition,
-                     context: TaskContext)
-  extends NextIterator[String] with Logging {
+class LoghubIterator[T: ClassTag](rddID: Int,
+                                  zkHelper: ZkHelper,
+                                  client: LoghubClientAgent,
+                                  part: ShardPartition,
+                                  context: TaskContext,
+                                  logGroupDecoder: FastLogGroup => ArrayBuffer[T])
+  extends NextIterator[T] with Logging {
 
   private var hasRead: Int = 0
   private var cursor = part.fromCursor
   private var endCursor: String = _
   private val shardId = part.shardId
   private val maxRecordsPerShard = part.maxRecordsPerShard
-  private var buffer = new LinkedBlockingQueue[String](maxRecordsPerShard)
+  private var buffer = new LinkedBlockingQueue[T](maxRecordsPerShard)
   private var hasNextBatch = true
   private var unlocked = false
   private var isFetchEndCursorCalled = false
@@ -55,7 +57,7 @@ class LoghubIterator(rddID: Int,
     }
   }
 
-  override protected def getNext(): String = {
+  override protected def getNext(): T = {
     if (hasRead < maxRecordsPerShard && hasNextBatch) {
       if (buffer.isEmpty) {
         fetchNextBatch()
@@ -67,7 +69,7 @@ class LoghubIterator(rddID: Int,
         zkHelper.saveOffset(shardId, cursor)
       }
       unlock()
-      null
+      null.asInstanceOf[T]
     } else {
       hasRead += 1
       buffer.poll()
@@ -101,28 +103,9 @@ class LoghubIterator(rddID: Int,
     }
     var count = 0
     r.GetLogGroups().foreach(group => {
-      val fastLogGroup = group.GetFastLogGroup()
-      val logCount = fastLogGroup.getLogsCount
-      count += logCount
-      for (i <- 0 until logCount) {
-        val log = fastLogGroup.getLogs(i)
-        val topic = fastLogGroup.getTopic
-        val source = fastLogGroup.getSource
-        val obj = new JSONObject()
-        obj.put(__TIME__, log.getTime)
-        obj.put(__TOPIC__, topic)
-        obj.put(__SOURCE__, source)
-        val fieldCount = log.getContentsCount
-        for (j <- 0 until fieldCount) {
-          val f = log.getContents(j)
-          obj.put(f.getKey, f.getValue)
-        }
-        for (i <- 0 until fastLogGroup.getLogTagsCount) {
-          val tag = fastLogGroup.getLogTags(i)
-          obj.put("__tag__:".concat(tag.getKey), tag.getValue)
-        }
-        buffer.offer(obj.toJSONString)
-      }
+      val logGroup = group.GetFastLogGroup()
+      buffer.addAll(logGroupDecoder(logGroup))
+      count += logGroup.getLogsCount
     })
     val nextCursor = r.GetNextCursor()
     if (log.isDebugEnabled) {

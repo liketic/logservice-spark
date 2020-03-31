@@ -16,23 +16,28 @@
  */
 package org.apache.spark.streaming.aliyun.logservice
 
+import com.aliyun.openservices.log.common.FastLogGroup
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 
-class LoghubRDD(@transient sc: SparkContext,
-                val project: String,
-                val logstore: String,
-                val consumerGroup: String,
-                val accessKeyId: String,
-                val accessKeySecret: String,
-                val endpoint: String,
-                val zkParams: Map[String, String],
-                val offsets: Array[InternalOffsetRange],
-                val maxRecordsPerShard: Int,
-                val checkpointDir: String)
-  extends RDD[String](sc, Nil) with Logging with HasOffsetRanges {
+import scala.collection.mutable.ArrayBuffer
+import scala.reflect.ClassTag
+
+class LoghubRDD[T: ClassTag](@transient sc: SparkContext,
+                             val project: String,
+                             val logstore: String,
+                             val consumerGroup: String,
+                             val accessKeyId: String,
+                             val accessKeySecret: String,
+                             val endpoint: String,
+                             val zkParams: Map[String, String],
+                             val offsets: Array[InternalOffsetRange],
+                             val maxRecordsPerShard: Int,
+                             val checkpointDir: String,
+                             decoder: FastLogGroup => ArrayBuffer[T])
+  extends RDD[T](sc, Nil) with Logging with HasOffsetRanges {
 
   @transient var client: LoghubClientAgent = _
   @transient var zkHelper: ZkHelper = _
@@ -53,11 +58,11 @@ class LoghubRDD(@transient sc: SparkContext,
   }
 
   @DeveloperApi
-  override def compute(split: Partition, context: TaskContext): Iterator[String] = {
+  override def compute(split: Partition, context: TaskContext): Iterator[T] = {
     initialize()
     val partition = split.asInstanceOf[ShardPartition]
-    val iter = new LoghubIterator(id, zkHelper, client, partition, context)
-    new InterruptibleIterator[String](context, iter)
+    val iter = new LoghubIterator(id, zkHelper, client, partition, context, decoder)
+    new InterruptibleIterator[T](context, iter)
   }
 
   override protected def getPartitions: Array[Partition] = {

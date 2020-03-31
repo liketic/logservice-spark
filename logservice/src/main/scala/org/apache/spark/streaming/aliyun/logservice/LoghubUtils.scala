@@ -16,19 +16,25 @@
  */
 package org.apache.spark.streaming.aliyun.logservice
 
+import com.alibaba.fastjson.JSONObject
+import com.aliyun.openservices.log.common.FastLogGroup
+
 import scala.collection.JavaConverters._
-
 import com.aliyun.openservices.loghub.client.config.LogHubCursorPosition
-
 import org.apache.spark.SparkContext
 import org.apache.spark.annotation.Experimental
 import org.apache.spark.api.java.{JavaRDD, JavaSparkContext}
 import org.apache.spark.batch.aliyun.logservice.LoghubBatchRDD
+import org.apache.spark.sql.aliyun.logservice.LoghubSourceProvider.{__SOURCE__, __TIME__, __TOPIC__}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.StreamingContext
+import org.apache.spark.streaming.aliyun.logservice.LoghubUtils.defaultLogGroupDecoder
 import org.apache.spark.streaming.api.java.{JavaDStream, JavaInputDStream, JavaReceiverInputDStream, JavaStreamingContext}
 import org.apache.spark.streaming.dstream.{DStream, ReceiverInputDStream}
+
+import scala.collection.mutable.ArrayBuffer
+import scala.reflect.ClassTag
 
 /**
  * Various utility classes for working with Aliyun LogService.
@@ -658,7 +664,6 @@ object LoghubUtils {
    *                     `mLoghubCursorStartTime`.
    * @return
    */
-  // scalastyle:off
   def createStream(
       jssc: JavaStreamingContext,
       logServiceProject: String,
@@ -676,7 +681,6 @@ object LoghubUtils {
       loghubEndpoint, numReceivers, accessKeyId, accessKeySecret, storageLevel,
       cursorPosition, mLoghubCursorStartTime, forceSpecial)
   }
-  // scalastyle:on
 
   /**
    * Create loghub [[DStream]].
@@ -771,7 +775,67 @@ object LoghubUtils {
       mode: LogHubCursorPosition,
       cursorStartTime: Long): DStream[String] = {
     new DirectLoghubInputDStream(ssc, project, logStore, mConsumerGroup, accessKeyId,
-      accessKeySecret, endpoint, zkParams, mode, cursorStartTime)
+      accessKeySecret, endpoint, zkParams, mode, cursorStartTime, defaultLogGroupDecoder)
+  }
+
+  def defaultLogGroupDecoder(logGroup: FastLogGroup): ArrayBuffer[String] = {
+    val logCount = logGroup.getLogsCount
+    val tagCount = logGroup.getLogTagsCount
+    val topic = logGroup.getTopic
+    val source = logGroup.getSource
+    val result = new ArrayBuffer[String](logCount)
+    for (i <- 0 until logCount) {
+      val log = logGroup.getLogs(i)
+      val fieldCount = log.getContentsCount
+      val obj = new JSONObject(fieldCount + tagCount + 3)
+      obj.put(__TIME__, log.getTime)
+      obj.put(__TOPIC__, topic)
+      obj.put(__SOURCE__, source)
+      for (j <- 0 until log.getContentsCount) {
+        val field = log.getContents(j)
+        obj.put(field.getKey, field.getValue)
+      }
+      for (j <- 0 until logGroup.getLogTagsCount) {
+        val tag = logGroup.getLogTags(j)
+        obj.put("__tag__:".concat(tag.getKey), tag.getValue)
+      }
+      result += obj.toJSONString
+    }
+    result
+  }
+
+  /**
+   * Create direct loghub [[DStream]] with custom decoder.
+   *
+   * @param ssc StreamingContext.
+   * @param project The name of `LogService` project.
+   * @param logStore The name of logStore.
+   * @param consumerGroup The group name of loghub consumer. All
+   *        consumer process which has the same group name will consumer
+   *        specific logStore together.
+   * @param accessKeyId The Aliyun Access Key Id.
+   * @param accessKeySecret The Aliyun Access Key Secret.
+   * @param endpoint The endpoint of loghub.
+   * @param zkParams Zookeeper parameters.
+   * @param mode Set user defined cursor type.
+   * @param cursorStartTime Set user defined cursor position (Unix Timestamp).
+   * @return
+   */
+  @Experimental
+  def createDirectStream[T: ClassTag](
+                          ssc: StreamingContext,
+                          project: String,
+                          logStore: String,
+                          consumerGroup: String,
+                          accessKeyId: String,
+                          accessKeySecret: String,
+                          endpoint: String,
+                          zkParams: Map[String, String],
+                          mode: LogHubCursorPosition,
+                          cursorStartTime: Long,
+                          logGroupDecoder: FastLogGroup => ArrayBuffer[T]): DStream[T] = {
+    new DirectLoghubInputDStream(ssc, project, logStore, consumerGroup, accessKeyId,
+      accessKeySecret, endpoint, zkParams, mode, cursorStartTime, logGroupDecoder)
   }
 
   /**
@@ -837,7 +901,7 @@ object LoghubUtils {
       cursorStartTime: Long): JavaInputDStream[String] = {
     new JavaInputDStream(new DirectLoghubInputDStream(jssc.ssc, project, logStore,
       mConsumerGroup, accessKeyId, accessKeySecret, endpoint, zkParams.asScala.toMap,
-      mode, cursorStartTime))
+      mode, cursorStartTime, defaultLogGroupDecoder))
   }
 
   def createRDD(
@@ -907,7 +971,6 @@ class LoghubUtilsHelper {
       loghubConsumerGroupName, numReceivers, storageLevel)
   }
 
-  // scalastyle:off
   def createStream(
       jssc: JavaStreamingContext,
       logServiceProject: String,
@@ -930,7 +993,6 @@ class LoghubUtilsHelper {
       loghubConsumerGroupName, loghubEndpoint, accessKeyId, accessKeySecret,
       storageLevel, cursor, mLoghubCursorStartTime, forceSpecial)
   }
-  // scalastyle:on
 
   def createStream(
       jssc: JavaStreamingContext,
@@ -952,7 +1014,6 @@ class LoghubUtilsHelper {
       forceSpecial)
   }
 
-  // scalastyle:off
   def createStream(
       jssc: JavaStreamingContext,
       logServiceProject: String,
@@ -976,7 +1037,6 @@ class LoghubUtilsHelper {
       loghubEndpoint, numReceivers, accessKeyId, accessKeySecret, storageLevel,
       cursor, mLoghubCursorStartTime, forceSpecial)
   }
-  // scalastyle:on
 
   def createStream(
       jssc: JavaStreamingContext,
@@ -1032,7 +1092,8 @@ class LoghubUtilsHelper {
       case e: String => throw new IllegalArgumentException(s"Unknown LogHubCursorPosition $e")
     }
     new JavaInputDStream(new DirectLoghubInputDStream(jssc.ssc, project, logStore, mConsumerGroup,
-      accessKeyId, accessKeySecret, endpoint, zkParams.asScala.toMap, cursorMode, cursorStartTime))
+      accessKeyId, accessKeySecret, endpoint, zkParams.asScala.toMap, cursorMode, cursorStartTime,
+      defaultLogGroupDecoder))
   }
 
   def createRDD(
