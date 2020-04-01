@@ -40,7 +40,7 @@ class LoghubIterator[T: ClassTag](rddID: Int,
   private var endCursor: String = _
   private val shardId = part.shardId
   private val maxRecordsPerShard = part.maxRecordsPerShard
-  private var buffer = new LinkedBlockingQueue[T](maxRecordsPerShard)
+  private var buffer = new LinkedBlockingQueue[T]()
   private var hasNextBatch = true
   private var unlocked = false
   private var isFetchEndCursorCalled = false
@@ -104,7 +104,10 @@ class LoghubIterator[T: ClassTag](rddID: Int,
     var count = 0
     r.GetLogGroups().foreach(group => {
       val logGroup = group.GetFastLogGroup()
-      buffer.addAll(logGroupDecoder(logGroup))
+      val records = logGroupDecoder(logGroup)
+      if (records != null) {
+        buffer.addAll(records)
+      }
       count += logGroup.getLogsCount
     })
     val nextCursor = r.GetNextCursor()
