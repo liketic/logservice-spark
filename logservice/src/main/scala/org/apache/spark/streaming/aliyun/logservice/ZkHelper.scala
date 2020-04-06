@@ -88,16 +88,22 @@ class ZkHelper(zkParams: Map[String, String],
     false
   }
 
+  def ensureDirExistsAndEmpty(dir: String): Unit = {
+    if (zkClient.exists(dir)) {
+      zkClient.getChildren(dir).foreach(child => {
+        zkClient.delete(s"$dir/$child")
+      })
+    } else {
+      zkClient.createPersistent(dir, true)
+    }
+  }
+
   def mkdir(): Unit = {
     initialize()
     try {
-      if (zkClient.exists(zkDir)) {
-        zkClient.getChildren(zkDir).foreach(child => {
-          zkClient.deleteRecursive(s"$zkDir/$child")
-        })
-      } else {
-        zkClient.createPersistent(zkDir, true)
-      }
+      ensureDirExistsAndEmpty(offsetDir)
+      ensureDirExistsAndEmpty(rddRangeDir)
+      ensureDirExistsAndEmpty(lockDir)
     } catch {
       case e: Exception =>
         throw new RuntimeException("Loghub direct api depends on zookeeper. Make sure " +
@@ -152,7 +158,7 @@ class ZkHelper(zkParams: Map[String, String],
     initialize()
     val lockFile = s"$lockDir/$shard"
     try {
-      zkClient.createPersistent(lockFile, true)
+      zkClient.createPersistent(lockFile)
       true
     } catch {
       case _: ZkNodeExistsException =>
