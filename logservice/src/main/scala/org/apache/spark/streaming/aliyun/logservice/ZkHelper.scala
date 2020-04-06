@@ -91,7 +91,7 @@ class ZkHelper(zkParams: Map[String, String],
   def ensureDirExistsAndEmpty(dir: String): Unit = {
     if (zkClient.exists(dir)) {
       zkClient.getChildren(dir).foreach(child => {
-        zkClient.deleteRecursive(s"$dir/$child")
+        zkClient.delete(s"$dir/$child")
       })
     } else {
       zkClient.createPersistent(dir, true)
