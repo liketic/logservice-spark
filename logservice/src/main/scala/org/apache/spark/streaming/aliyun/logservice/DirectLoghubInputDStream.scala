@@ -72,7 +72,6 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
   }
 
   private def initialize(): Unit = this.synchronized {
-    logInfo(s"endpoint = $endpoint, project=$project, logstore = $logstore")
     if (loghubClient == null) {
       loghubClient = LoghubClient.getOrCreate(endpoint,
         accessKeyId,
@@ -161,7 +160,6 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
           if (start.equals(end)) {
             logInfo(s"Skip empty $shardId end cursor $start")
             readOnlyShardCache.put(shardId, end)
-            zkHelper.unlock(shardId)
             skip = true
           }
         }
@@ -169,6 +167,8 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
           shardOffsets.add(InternalOffsetRange(shardId, start, end))
           logInfo(s"Shard $shardId start from $start")
           zkHelper.markOffset(shardId, start)
+        } else {
+          zkHelper.unlock(shardId)
         }
       }
     })
