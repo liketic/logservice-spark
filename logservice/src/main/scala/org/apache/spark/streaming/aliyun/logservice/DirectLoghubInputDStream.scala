@@ -17,6 +17,7 @@
 package org.apache.spark.streaming.aliyun.logservice
 
 import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy
 
 import com.aliyun.openservices.log.common.Consts.CursorMode
 import com.aliyun.openservices.log.common.ConsumerGroup
@@ -209,6 +210,7 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
   override def commitAsync(offsetRanges: Array[OffsetRange]): Unit = {
     if (pool == null) {
       pool = ThreadUtils.newDaemonCachedThreadPool("commit-pool", 16)
+      pool.setRejectedExecutionHandler(new CallerRunsPolicy())
     }
     offsetRanges.foreach(r => {
       pool.submit(new Runnable {

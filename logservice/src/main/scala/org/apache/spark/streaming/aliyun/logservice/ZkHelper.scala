@@ -168,12 +168,7 @@ class ZkHelper(zkParams: Map[String, String],
   }
 
   private def deleteIfExists(path: String): Unit = {
-    try {
-      zkClient.delete(path)
-    } catch {
-      case _: ZkNoNodeException =>
-      // ignore
-    }
+    zkClient.delete(path)
   }
 
   def unlock(shard: Int): Unit = {
