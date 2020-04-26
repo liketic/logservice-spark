@@ -5,7 +5,7 @@
     <parent>
         <groupId>com.aliyun.openservices</groupId>
         <artifactId>logservice-spark-connector-parent</artifactId>
-        <version>1.1.0</version>
+        <version>1.1.2</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -54,21 +54,6 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql-kafka-0-10_${scala.binary.version}</artifactId>
             <version>${spark.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.curator</groupId>
-            <artifactId>curator-framework</artifactId>
-            <version>${curator.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.curator</groupId>
-            <artifactId>curator-client</artifactId>
-            <version>${curator.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.curator</groupId>
-            <artifactId>curator-recipes</artifactId>
-            <version>${curator.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.hadoop</groupId>
@@ -120,7 +105,6 @@
                     <outputFile>${project.build.directory}/shaded/emr-examples_${scala.binary.version}-${project.version}.jar</outputFile>
                     <artifactSet>
                         <includes>
-                            <include>org.apache.spark:spark-sql-kafka-0-10_${scala.binary.version}</include>
                             <include>com.aliyun.openservices:aliyun-log</include>
                             <include>com.aliyun.openservices:loghub-client-lib</include>
                             <include>com.aliyun.openservices:aliyun-log-producer</include>
@@ -129,8 +113,6 @@
                             <include>org.aspectj:aspectjrt</include>
                             <include>com.github.scopt:scopt_2.10</include>
                             <include>org.jdom:jdom</include>
-                            <include>net.sf.json-lib:json-lib</include>
-                            <include>net.sf.ezmorph:ezmorph</include>
                             <include>commons-validator:commons-validator</include>
                             <include>org.apache.commons:commons-pool2</include>
                             <include>org.apache.httpcomponents:httpasyncclient</include>
@@ -139,25 +121,13 @@
                             <include>commons-lang:commons-lang</include>
                             <include>org.apache.hadoop:hadoop-hdfs</include>
                             <include>org.apache.hadoop:hadoop-common</include>
-                            <include>com.101tec:zkclient</include>
                             <include>javax.mail:mail</include>
-                            <include>org.apache.hbase:*</include>
-                            <include>org.apache.phoenix:*</include>
-                            <include>org.apache.hbase.thirdparty:*</include>
                             <include>org.apache.htrace:*</include>
                             <include>com.hortonworks:*</include>
                             <include>org.json4s:*</include>
                             <include>com.google.protobuf:protobuf-java</include>
                             <include>com.101tec:zkclient</include>
-                            <include>com.squareup.retrofit2:*</include>
-                            <include>com.squareup.okhttp3:*</include>
-                            <include>com.squareup.okio:*</include>
-                            <include>org.apache.kafka:kafka-clients</include>
-                            <include>org.apache.kudu:kudu-spark2_2.11</include>
-                            <include>com.redislabs:spark-redis</include>
-                            <include>redis.clients:jedis</include>
                             <include>org.apache.zookeeper:zookeeper</include>
-                            <inclde>org.apache.curator:*</inclde>
                         </includes>
                     </artifactSet>
                     <relocations>
@@ -176,18 +146,6 @@
                         <relocation>
                             <pattern>com.google.protobuf</pattern>
                             <shadedPattern>${emr.shade.packageName}.protobuf</shadedPattern>
-                        </relocation>
-                        <relocation>
-                            <pattern>okhttp3</pattern>
-                            <shadedPattern>${emr.shade.packageName}.okhttp3</shadedPattern>
-                        </relocation>
-                        <relocation>
-                            <pattern>okio</pattern>
-                            <shadedPattern>${emr.shade.packageName}.okio</shadedPattern>
-                        </relocation>
-                        <relocation>
-                            <pattern>org.apache.curator</pattern>
-                            <shadedPattern>${emr.shade.packageName}.curator</shadedPattern>
                         </relocation>
                     </relocations>
                 </configuration>

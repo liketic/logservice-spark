@@ -16,16 +16,28 @@
  */
 package org.apache.spark.streaming.aliyun.logservice.writer
 
+import java.util
+
 import com.aliyun.openservices.aliyun.log.producer._
 import org.apache.commons.cli.MissingArgumentException
 
+import scala.collection.JavaConversions._
 
 object CachedProducer {
-  @transient private var producer: Producer = _
 
-  def getOrCreate[K, V](project: String,
-                        producerConfig: Map[String, String]): Producer = {
+  private case class CacheKey(project: String,
+                              producerConfig: Map[String, String])
+
+  private var cache: util.HashMap[CacheKey, LogProducer] = _
+
+  def getOrCreate(project: String,
+                  producerConfig: Map[String, String]): Producer = {
     synchronized {
+      if (cache == null) {
+        cache = new util.HashMap[CacheKey, LogProducer]()
+      }
+      val k = CacheKey(project, producerConfig)
+      var producer = cache.get(k)
       if (producer == null) {
         val accessKeyId = producerConfig.getOrElse("access.key.id",
           throw new MissingArgumentException("Missing access key id (='access.key.id')."))
@@ -40,6 +52,7 @@ object CachedProducer {
         producer.putProjectConfig(
           new ProjectConfig(project, endpoint, accessKeyId, accessKeySecret))
         sys.addShutdownHook(producer.close())
+        cache.put(k, producer)
       }
       producer
     }
@@ -50,10 +63,9 @@ object CachedProducer {
    */
   def close(): Unit = {
     synchronized {
-      if (producer != null) {
-        producer.close()
-        producer = null
-      }
+      cache.foreach(it => {
+        it._2.close()
+      })
     }
   }
 }

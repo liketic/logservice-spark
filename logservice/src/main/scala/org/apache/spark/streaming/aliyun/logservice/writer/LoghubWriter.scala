@@ -26,14 +26,30 @@ abstract class LoghubWriter[T: ClassTag] extends Serializable {
   /**
    * Write a DStream to Loghub
    *
-   * @param producerConfig producer configuration for creating KafkaProducer
+   * @param producerConfig producer configuration for creating SLS producer
+   * @param topic          the topic of this log
+   * @param source         the source of this log
    * @param transformFunc  a function used to transform values of T type into [[LogItem]]s
-   * @param callback an optional [[Callback]] to be called after each write, default value is None.
+   * @param callback       an optional [[Callback]] to be called after each write, default value is None.
    */
-  def writeToLoghub(
-      producerConfig: Map[String, String],
-      topic: String,
-      source: String,
-      transformFunc: T => LogItem,
-      callback: Option[Callback] = None): Unit
+  def writeToLoghub(producerConfig: Map[String, String],
+                    topic: String,
+                    source: String,
+                    transformFunc: T => LogItem,
+                    callback: Option[Callback] = None): Unit
+
+  /**
+   * Write a DStream to Loghub
+   *
+   * @param producerConfig producer configuration for creating SLS producer
+   * @param topic          the topic of this log
+   * @param source         the source of this log
+   * @param transformFunc  a function used to transform values of T type into [[LogItem]]s
+   * @param callback       an optional [[Callback]] to be called after each write, default value is None.
+   */
+  def writeToLoghubWithHashKey(producerConfig: Map[String, String],
+                               topic: String,
+                               source: String,
+                               transformFunc: T => (String, LogItem),
+                               callback: Option[Callback] = None): Unit
 }
