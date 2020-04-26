@@ -4,7 +4,7 @@
 
     <groupId>com.aliyun.openservices</groupId>
     <artifactId>logservice-spark-connector-parent</artifactId>
-    <version>1.1.1</version>
+    <version>1.1.2</version>
 
     <packaging>pom</packaging>
     <name>Spark Connector for Alibaba Log Service Parent</name>
@@ -36,7 +36,7 @@
         <spark.version>2.4.3</spark.version>
         <loghub.client.version>0.6.15</loghub.client.version>
         <aliyun.log.version>0.6.37</aliyun.log.version>
-        <aliyun.log.producer.version>0.3.3</aliyun.log.producer.version>
+        <aliyun.log.producer.version>0.3.5</aliyun.log.producer.version>
         <hadoop.version>2.9.0</hadoop.version>
         <fastjson.version>1.2.45</fastjson.version>
         <guava.version>14.0.1</guava.version>

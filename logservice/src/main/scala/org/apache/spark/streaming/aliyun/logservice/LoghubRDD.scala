@@ -62,6 +62,7 @@ class LoghubRDD(@transient sc: SparkContext,
 
   override protected def getPartitions: Array[Partition] = {
     val batchSize = sc.getConf.get("spark.loghub.batchGet.step", "100").toInt
+    val ignoreTags = sc.getConf.get("spark.loghub.ignoreTags", defaultValue = "false").toBoolean
     offsetRanges.zipWithIndex.map { case (p, idx) =>
       ShardPartition(id, idx,
         p.shardId,
@@ -72,7 +73,8 @@ class LoghubRDD(@transient sc: SparkContext,
         accessKeySecret,
         endpoint,
         p.fromCursor,
-        batchSize).asInstanceOf[Partition]
+        batchSize,
+        ignoreTags).asInstanceOf[Partition]
     }
   }
 }

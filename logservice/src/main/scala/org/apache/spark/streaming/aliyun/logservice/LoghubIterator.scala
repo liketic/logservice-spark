@@ -112,14 +112,17 @@ class LoghubIterator(rddID: Int,
         obj.put(__TIME__, log.getTime)
         obj.put(__TOPIC__, topic)
         obj.put(__SOURCE__, source)
+        obj.put(__SHARD__, shardId)
         val fieldCount = log.getContentsCount
         for (j <- 0 until fieldCount) {
           val f = log.getContents(j)
           obj.put(f.getKey, f.getValue)
         }
-        for (i <- 0 until fastLogGroup.getLogTagsCount) {
-          val tag = fastLogGroup.getLogTags(i)
-          obj.put("__tag__:".concat(tag.getKey), tag.getValue)
+        if (!part.ignoreTags) {
+          for (i <- 0 until fastLogGroup.getLogTagsCount) {
+            val tag = fastLogGroup.getLogTags(i)
+            obj.put("__tag__:".concat(tag.getKey), tag.getValue)
+          }
         }
         buffer.offer(obj.toJSONString)
       }
