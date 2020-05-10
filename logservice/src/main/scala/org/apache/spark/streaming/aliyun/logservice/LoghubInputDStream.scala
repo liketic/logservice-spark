@@ -28,7 +28,7 @@ class LoghubInputDStream(
     @transient _ssc: StreamingContext,
     logServiceProject: String,
     logStoreName: String,
-    loghubConsumerGroupName: String,
+    consumerGroupName: String,
     loghubInstanceNameBase: String,
     var loghubEndpoint: String,
     var accessKeyId: String,
@@ -38,38 +38,23 @@ class LoghubInputDStream(
     mLoghubCursorStartTime: Int,
     forceSpecial: Boolean)
   extends ReceiverInputDStream[Array[Byte]](_ssc) {
-  val mConsumeInOrder =
+  private val consumeInOrder =
     _ssc.sc.getConf.getBoolean("spark.logservice.fetch.inOrder", true)
-  val mHeartBeatIntervalMillis =
+  private  val heartBeatIntervalMillis =
     _ssc.sc.getConf.getLong("spark.logservice.heartbeat.interval.millis", 30000L)
-  val dataFetchIntervalMillis =
+  private val dataFetchIntervalMillis =
     _ssc.sc.getConf.getLong("spark.logservice.fetch.interval.millis", 200L)
-  val batchInterval = _ssc.graph.batchDuration.milliseconds
-  var securityToken: String = null
-  @transient lazy val slsClient = new Client(loghubEndpoint, accessKeyId, accessKeySecret)
-
-  if (forceSpecial && cursorPosition.toString.equals(
-    LogHubCursorPosition.SPECIAL_TIMER_CURSOR.toString)) {
-    try {
-      slsClient.DeleteConsumerGroup(logServiceProject, logStoreName,
-        loghubConsumerGroupName)
-    } catch {
-      case e: Exception =>
-        // In case of expired token
-        logError(s"Failed to delete consumer group, ${e.getMessage}", e)
-        throw e
-    }
-  }
+  private val batchInterval = _ssc.graph.batchDuration.milliseconds
 
   override def getReceiver(): Receiver[Array[Byte]] =
     new LoghubReceiver(
-      mConsumeInOrder,
-      mHeartBeatIntervalMillis,
+      consumeInOrder,
+      heartBeatIntervalMillis,
       dataFetchIntervalMillis,
       batchInterval,
       logServiceProject,
       logStoreName,
-      loghubConsumerGroupName,
+      consumerGroupName,
       loghubInstanceNameBase,
       loghubEndpoint,
       accessKeyId,

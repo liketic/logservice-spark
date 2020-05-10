@@ -23,8 +23,8 @@ import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.receiver.Receiver
 
 private[logservice] class LoghubReceiver(
-    mConsumeInOrder: Boolean,
-    mHeartBeatIntervalMillis: Long,
+    consumeInOrder: Boolean,
+    heartBeatIntervalMillis: Long,
     dataFetchIntervalMillis: Long,
     batchInterval: Long,
     logServiceProject: String,
@@ -45,18 +45,17 @@ private[logservice] class LoghubReceiver(
 
   override def onStart(): Unit = {
     val initCursor = cursorPosition
-    val config = if (!cursorPosition.toString.equals(
-      LogHubCursorPosition.SPECIAL_TIMER_CURSOR.toString)) {
+    val config = if (cursorPosition != LogHubCursorPosition.SPECIAL_TIMER_CURSOR) {
       new LogHubConfig(loghubConsumerGroupName,
         s"$loghubConsumerGroupName-$loghubInstanceNameBase-$streamId",
         loghubEndpoint, logServiceProject, logStoreName, accessKeyId,
-        accessKeySecret, initCursor, mHeartBeatIntervalMillis, mConsumeInOrder)
+        accessKeySecret, initCursor, heartBeatIntervalMillis, consumeInOrder)
     } else {
       new LogHubConfig(loghubConsumerGroupName,
         s"$loghubConsumerGroupName-$loghubInstanceNameBase-$streamId",
         loghubEndpoint, logServiceProject, logStoreName, accessKeyId,
-        accessKeySecret, mLoghubCursorStartTime, mHeartBeatIntervalMillis,
-        mConsumeInOrder)
+        accessKeySecret, mLoghubCursorStartTime, heartBeatIntervalMillis,
+        consumeInOrder)
     }
     config.setDataFetchIntervalMillis(dataFetchIntervalMillis)
 
