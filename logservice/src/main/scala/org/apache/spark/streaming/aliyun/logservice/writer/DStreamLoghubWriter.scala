@@ -27,13 +27,32 @@ class DStreamLoghubWriter[T: ClassTag](@transient private val dStream: DStream[T
   extends LoghubWriter[T] with Serializable {
 
   override def writeToLoghub(
-      producerConfig: Map[String, String],
-      topic: String,
-      source: String,
-      transformFunc: T => LogItem,
-      callback: Option[Callback] = None): Unit =
+                              producerConfig: Map[String, String],
+                              topic: String,
+                              source: String,
+                              transformFunc: T => LogItem,
+                              callback: Option[Callback] = None): Unit =
     dStream.foreachRDD { rdd =>
-      val rddWriter = new RDDLoghubWriter[T](rdd)
-      rddWriter.writeToLoghub(producerConfig, topic, source, transformFunc, callback)
+      val writer = new RDDLoghubWriter[T](rdd)
+      writer.writeToLoghub(producerConfig, topic, source, transformFunc, callback)
+    }
+
+  /**
+   * Write a DStream to Loghub
+   *
+   * @param producerConfig producer configuration for creating SLS producer
+   * @param topic          the topic of this log
+   * @param source         the source of this log
+   * @param transformFunc  a function used to transform values of T type into [[LogItem]]s
+   * @param callback       an optional [[Callback]] to be called after each write, default value is None.
+   */
+  override def writeToLoghubWithHashKey(producerConfig: Map[String, String],
+                                        topic: String,
+                                        source: String,
+                                        transformFunc: T => (String, LogItem),
+                                        callback: Option[Callback]): Unit =
+    dStream.foreachRDD { rdd =>
+      val writer = new RDDLoghubWriter[T](rdd)
+      writer.writeToLoghubWithHashKey(producerConfig, topic, source, transformFunc, callback)
     }
 }

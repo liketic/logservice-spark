@@ -19,22 +19,21 @@ package com.aliyun.openservices.examples.streaming
 import com.aliyun.openservices.aliyun.log.producer.{Callback, Result}
 import com.aliyun.openservices.log.common.LogItem
 import com.aliyun.openservices.loghub.client.config.LogHubCursorPosition
-
 import org.apache.spark.SparkConf
-import org.apache.spark.streaming.{Milliseconds, StreamingContext}
 import org.apache.spark.streaming.aliyun.logservice.LoghubUtils
 import org.apache.spark.streaming.aliyun.logservice.writer._
+import org.apache.spark.streaming.{Milliseconds, StreamingContext}
+
+import scala.util.parsing.json.JSON
 
 object TestLoghubWriter {
 
   def main(args: Array[String]): Unit = {
-    if (args.length < 8) {
-      // scalastyle:off
+    if (args.length < 6) {
       System.err.println(
-        """Usage: TestLoghubWriter <sls project> <sls logstore> <sls target logstore> <sls group name> <sls endpoint>
-          |         <access key id> <access key secret> <batch interval seconds> <zookeeper host:port=localhost:2181>
-            """.stripMargin)
-      // scalastyle:on
+        """Usage: TestLoghubWriter <sls project> <sls logstore> <sls target logstore> <sls endpoint>
+          |         <access key id> <access key secret>
+                """.stripMargin)
       System.exit(1)
     }
 
@@ -45,15 +44,15 @@ object TestLoghubWriter {
     val endpoint = args(4)
     val accessKeyId = args(5)
     val accessKeySecret = args(6)
-    val batchInterval = Milliseconds(args(7).toInt * 1000)
-    val zkAddress = if (args.length >= 9) args(8) else "localhost:2181"
+    val batchInterval = Milliseconds(5 * 1000)
+    val zkAddress = "localhost:2181"
 
     val conf = new SparkConf().setAppName("Test write data to Loghub")
       .setMaster("local[1]")
       .set("spark.streaming.loghub.maxRatePerShard", "10")
       .set("spark.loghub.batchGet.step", "1")
-    val zkParas = Map("zookeeper.connect" -> zkAddress,
-      "enable.auto.commit" -> "false")
+      .set("spark.loghub.ignoreTags", "true")
+    val zkParas = Map("zookeeper.connect" -> zkAddress)
     val ssc = new StreamingContext(conf, batchInterval)
 
     val loghubStream = LoghubUtils.createDirectStream(
@@ -78,10 +77,37 @@ object TestLoghubWriter {
 
     val lines = loghubStream.map(x => x)
 
-    def transformFunc(x: String): LogItem = {
-      val r = new LogItem()
-      r.PushBack("key", x)
-      r
+    val myConversionFunc = { input: String => Integer.parseInt(input) }
+    // Convert numberic field to int instead of double
+    JSON.globalNumberParser = myConversionFunc
+
+    def transformFunc(jsonStr: String): (String, LogItem) = {
+      val result = JSON.parseFull(jsonStr)
+      result match {
+        case Some(map: Map[String, Any]) =>
+          val item = new LogItem()
+          var hashkey: String = null
+          map.foreach(it => {
+            it._2 match {
+              case str: String =>
+                item.PushBack(it._1, str)
+              case _: Double =>
+                println(s"${it._1} is double: ${it._2}")
+              case other: Int =>
+                if (it._1.equals("__shard__")) {
+                  // shard as hash key
+                  hashkey = it._2.toString
+                } else if (it._1.equals("__time__")) {
+                  // copy log time
+                  item.SetTime(other)
+                }
+            }
+          })
+          (hashkey, item)
+        case None =>
+          // ignore
+          (null, null)
+      }
     }
 
     val callback = new Callback with Serializable {
@@ -92,13 +118,14 @@ object TestLoghubWriter {
       }
     }
 
-    lines.writeToLoghub(
+    lines.writeToLoghubWithHashKey(
       producerConfig,
       "topic",
       "streaming",
-      transformFunc, Option.apply(callback))
+      transformFunc,
+      Option.apply(callback))
 
-    ssc.checkpoint("hdfs:///tmp/spark/streaming") // set checkpoint directory
+    ssc.checkpoint("/tmp/spark/streaming") // set checkpoint directory
     ssc.start()
     ssc.awaitTermination()
   }

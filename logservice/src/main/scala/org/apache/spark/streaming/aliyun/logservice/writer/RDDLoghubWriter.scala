@@ -27,12 +27,11 @@ import org.apache.spark.rdd.RDD
 class RDDLoghubWriter[T: ClassTag](@transient private val rdd: RDD[T])
   extends LoghubWriter[T] with Serializable {
 
-  override def writeToLoghub(
-      producerConfig: Map[String, String],
-      topic: String,
-      source: String,
-      transformFunc: T => LogItem,
-      callback: Option[Callback] = None): Unit =
+  override def writeToLoghub(producerConfig: Map[String, String],
+                             topic: String,
+                             source: String,
+                             transformFunc: T => LogItem,
+                             callback: Option[Callback] = None): Unit =
     rdd.foreachPartition { partition =>
       val project = producerConfig.getOrElse("sls.project",
         throw new MissingArgumentException("Missing project (='sls.project')."))
@@ -44,6 +43,35 @@ class RDDLoghubWriter[T: ClassTag](@transient private val rdd: RDD[T])
         .foreach(record => {
           if (record != null) {
             producer.send(project, logstore, topic, source, record, callback.orNull)
+          }
+        })
+    }
+
+  /**
+   * Write a DStream to Loghub
+   *
+   * @param producerConfig producer configuration for creating SLS producer
+   * @param topic          the topic of this log
+   * @param source         the source of this log
+   * @param transformFunc  a function used to transform values of T type into [[LogItem]]s
+   * @param callback       an optional [[Callback]] to be called after each write, default value is None.
+   */
+  override def writeToLoghubWithHashKey(producerConfig: Map[String, String],
+                                        topic: String,
+                                        source: String,
+                                        transformFunc: T => (String, LogItem),
+                                        callback: Option[Callback]): Unit =
+    rdd.foreachPartition { partition =>
+      val project = producerConfig.getOrElse("sls.project",
+        throw new MissingArgumentException("Missing project (='sls.project')."))
+      val logstore = producerConfig.getOrElse("sls.logstore",
+        throw new MissingArgumentException("Missing logstore (='sls.logstore')."))
+      val producer = CachedProducer.getOrCreate(project, producerConfig)
+      partition
+        .foreach(r => {
+          val data = transformFunc(r)
+          if (data != null) {
+            producer.send(project, logstore, topic, source, data._1, data._2, callback.orNull)
           }
         })
     }
