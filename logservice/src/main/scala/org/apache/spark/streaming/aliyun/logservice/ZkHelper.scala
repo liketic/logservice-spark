@@ -17,11 +17,12 @@
 package org.apache.spark.streaming.aliyun.logservice
 
 import java.nio.charset.StandardCharsets
+import java.time.Instant
 import java.util
 import java.util.Base64
 
 import org.I0Itec.zkclient.ZkClient
-import org.I0Itec.zkclient.exception.{ZkNoNodeException, ZkNodeExistsException}
+import org.I0Itec.zkclient.exception.ZkNodeExistsException
 import org.I0Itec.zkclient.serialize.ZkSerializer
 import org.apache.spark.internal.Logging
 
@@ -154,17 +155,27 @@ class ZkHelper(zkParams: Map[String, String],
     writeData(path, cursor)
   }
 
-  def tryLock(shard: Int): Boolean = {
+  def tryLock(shard: Int, timeout: Long): Boolean = {
     initialize()
     val lockFile = s"$lockDir/$shard"
+    val expiredAt = Instant.now().getEpochSecond + timeout
+    val data = String.valueOf(expiredAt)
     try {
-      zkClient.createPersistent(lockFile)
-      true
+      zkClient.createPersistent(lockFile, data)
+      return true
     } catch {
       case _: ZkNodeExistsException =>
         logWarning(s"$shard already locked")
-        false
+        val oldTs = zkClient.readData(lockFile)
+        if (oldTs == null || Integer.parseInt(oldTs) <= expiredAt) {
+          // invalid ts or expired
+          zkClient.writeData(lockFile, data)
+          return true
+        }
+      case ex: Exception =>
+        logError("Error connecting zk", ex)
     }
+    false
   }
 
   private def deleteIfExists(path: String): Unit = {

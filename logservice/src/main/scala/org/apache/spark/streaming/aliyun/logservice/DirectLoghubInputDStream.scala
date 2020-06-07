@@ -144,11 +144,13 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
   override def compute(validTime: Time): Option[RDD[String]] = {
     initialize()
     val shardOffsets = new ArrayBuffer[InternalOffsetRange]()
+    // Ten durations or 1 second
+    val lockTimeoutSec = Math.max(ssc.graph.batchDuration.milliseconds / 100, 1)
     loghubClient.ListShard(project, logstore).GetShards().foreach(shard => {
       val shardId = shard.GetShardId()
       if (readOnlyShardCache.contains(shardId)) {
         logInfo(s"There is no data to consume from shard $shardId.")
-      } else if (zkHelper.tryLock(shardId)) {
+      } else if (zkHelper.tryLock(shardId, lockTimeoutSec)) {
         var start = zkHelper.readOffset(shardId)
         if (start == null || start.isEmpty) {
           // this is the first fetching of this shard
