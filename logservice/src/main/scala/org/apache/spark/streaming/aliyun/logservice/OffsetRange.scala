@@ -24,9 +24,9 @@ package org.apache.spark.streaming.aliyun.logservice
  * @param fromCursor  The start cursor of range.
  * @param untilCursor The end cursor of range which may be null.
  */
-case class OffsetRange(rddID: Int, shardId: Int, fromCursor: String, untilCursor: String)
+case class OffsetRange(logstore: String, rddID: Int, shardId: Int, fromCursor: String, untilCursor: String)
 
-case class InternalOffsetRange(shardId: Int, fromCursor: String, untilCursor: String)
+case class InternalOffsetRange(logstore: String, shardId: Int, fromCursor: String, untilCursor: String)
 
 trait HasOffsetRanges {
   def offsetRanges: Array[OffsetRange]

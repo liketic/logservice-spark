@@ -16,14 +16,15 @@
  */
 package org.apache.spark.streaming.aliyun.logservice
 
-import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
+import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
+
+import scala.collection.mutable
 
 class LoghubRDD(@transient sc: SparkContext,
                 val project: String,
-                val logstore: String,
                 val consumerGroup: String,
                 val accessKeyId: String,
                 val accessKeySecret: String,
@@ -35,10 +36,14 @@ class LoghubRDD(@transient sc: SparkContext,
   extends RDD[String](sc, Nil) with Logging with HasOffsetRanges {
 
   @transient var client: LoghubClientAgent = _
-  @transient var zkHelper: ZkHelper = _
+  @transient var zkHelpers: mutable.Map[String, ZkHelper] = _
 
   private def initialize(): Unit = {
-    zkHelper = ZkHelper.getOrCreate(zkParams, checkpointDir, project, logstore)
+    zkHelpers = new mutable.HashMap[String, ZkHelper]()
+    offsets.foreach(r => {
+      val zkClient = ZkHelper.getOrCreate(zkParams, checkpointDir, project, r.logstore)
+      zkHelpers.put(r.logstore, zkClient)
+    })
     client = LoghubClient.getOrCreate(endpoint, accessKeyId, accessKeySecret, consumerGroup)
   }
 
@@ -56,7 +61,8 @@ class LoghubRDD(@transient sc: SparkContext,
   override def compute(split: Partition, context: TaskContext): Iterator[String] = {
     initialize()
     val partition = split.asInstanceOf[ShardPartition]
-    val iter = new LoghubIterator(id, zkHelper, client, partition, context)
+    val zkClient = zkHelpers(partition.logstore)
+    val iter = new LoghubIterator(id, zkClient, client, partition, context)
     new InterruptibleIterator[String](context, iter)
   }
 
@@ -68,7 +74,7 @@ class LoghubRDD(@transient sc: SparkContext,
         p.shardId,
         maxRecordsPerShard,
         project,
-        logstore,
+        p.logstore,
         accessKeyId,
         accessKeySecret,
         endpoint,
