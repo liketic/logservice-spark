@@ -52,7 +52,7 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
                                cursorStartTime: Long = -1L)
   extends InputDStream[String](_ssc) with Logging with CanCommitOffsets {
   @transient private var loghubClient: LoghubClientAgent = _
-  @transient private var zkHelpers: mutable.Map[String, ZkHelper] = _
+  @transient private var zkHelpers: mutable.Map[String, ZkClientWrapper] = _
 
   private val initialRate = context.sparkContext.getConf.getLong(
     "spark.streaming.backpressure.initialRate", 0)
@@ -82,14 +82,14 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
         consumerGroup)
     }
     if (zkHelpers == null) {
-      zkHelpers = new mutable.HashMap[String, ZkHelper]()
+      zkHelpers = new mutable.HashMap[String, ZkClientWrapper]()
       logstores.foreach(logstore => {
-        val zkHelper = ZkHelper.getOrCreate(zkParams, checkpointDir, project, logstore)
+        val zkHelper = ZkClientWrapper.getOrCreate(zkParams, checkpointDir, project, logstore)
         zkHelper.mkdir()
         val checkpoints = createConsumerGroupOrGetCheckpoint(logstore)
         loghubClient.ListShard(project, logstore).GetShards().foreach(r => {
           val shardId = r.GetShardId()
-          val offset = findCheckpointOrCursorForShard(shardId, checkpoints)
+          val offset = findCheckpointOrCursorForShard(logstore, shardId, checkpoints)
           zkHelper.saveOffset(shardId, offset)
         })
         zkHelpers.put(logstore, zkHelper)

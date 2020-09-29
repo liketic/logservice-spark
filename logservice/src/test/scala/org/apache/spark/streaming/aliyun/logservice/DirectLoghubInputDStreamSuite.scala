@@ -17,11 +17,12 @@
 
 package org.apache.spark.streaming.aliyun.logservice
 
+import java.util
+
 import com.aliyun.openservices.log.common.Consts
 import com.aliyun.openservices.loghub.client.config.LogHubCursorPosition
 
 import scala.collection.mutable
-
 import org.apache.spark.{SparkConf, SparkFunSuite}
 import org.apache.spark.sql.aliyun.logservice.LoghubTestUtils
 import org.apache.spark.streaming.{Milliseconds, StreamingContext}
@@ -33,13 +34,13 @@ class DirectLoghubInputDStreamSuite extends SparkFunSuite {
   private val zkParas = Map("zookeeper.connect" -> "localhost:2181")
   private val conf = new SparkConf().setAppName("Test Direct SLS Loghub")
     .setMaster("local")
-  private var logstore: String = _
+  private var logstores: util.Collection[String] = _
 
   test("test checkpoint empty will be filtered") {
     val stream = new DirectLoghubInputDStream(
       sc,
       testUtils.logProject,
-      logstore,
+      logstores,
       "consumergroup",
       testUtils.accessKeyId,
       testUtils.accessKeySecret,
@@ -54,9 +55,10 @@ class DirectLoghubInputDStreamSuite extends SparkFunSuite {
     val ckpt = new mutable.HashMap[Int, String]()
     ckpt.put(0, "not-empty-cursor")
     ckpt.put(1, "")
-    val ckpt1 = stream.findCheckpointOrCursorForShard(0, ckpt)
+    val logstore = logstores.iterator().next()
+    val ckpt1 = stream.findCheckpointOrCursorForShard(logstore, 0, ckpt)
     assert(ckpt1 == "not-empty-cursor")
-    val ckpt2 = stream.findCheckpointOrCursorForShard(1, ckpt)
+    val ckpt2 = stream.findCheckpointOrCursorForShard(logstore, 1, ckpt)
     val beginCursor = client.GetCursor(testUtils.logProject,
       logstore, 1, Consts.CursorMode.BEGIN).GetCursor()
     assert(ckpt2 == beginCursor)
@@ -67,7 +69,7 @@ class DirectLoghubInputDStreamSuite extends SparkFunSuite {
     val stream = new DirectLoghubInputDStream(
       sc,
       testUtils.logProject,
-      logstore,
+      logstores,
       cg,
       testUtils.accessKeyId,
       testUtils.accessKeySecret,
@@ -79,7 +81,9 @@ class DirectLoghubInputDStreamSuite extends SparkFunSuite {
       testUtils.accessKeyId,
       testUtils.accessKeySecret)
     stream.setClient(client)
-    var checkpoints = stream.createConsumerGroupOrGetCheckpoint()
+    val logstore = logstores.iterator().next()
+
+    var checkpoints = stream.createConsumerGroupOrGetCheckpoint(logstore)
     assert(checkpoints.isEmpty)
     Thread.sleep(60000)
     testUtils.client.UpdateCheckPoint(testUtils.logProject,
@@ -92,21 +96,25 @@ class DirectLoghubInputDStreamSuite extends SparkFunSuite {
       cg,
       1,
       "MTU3NTUzMDgyMDA0MDk4NDQzOQ==")
-    val ckpts = stream.createConsumerGroupOrGetCheckpoint()
+    val ckpts = stream.createConsumerGroupOrGetCheckpoint(logstore)
     assert(ckpts.size == 2)
     assert(ckpts.getOrElse(0, "").equals("MTU3NTUzMDgyMDAzOTA5Mjk0MQ=="))
     assert(ckpts.getOrElse(1, "").equals("MTU3NTUzMDgyMDA0MDk4NDQzOQ=="))
   }
 
   protected override def beforeAll(): Unit = {
-    logstore = testUtils.newLogStore()
+    val logstore = testUtils.newLogStore()
     testUtils.createLogStore(logstore)
+    logstores = util.Arrays.asList(logstore)
     Thread.sleep(60000)
     val batchInterval = Milliseconds(5 * 1000)
     sc = new StreamingContext(conf, batchInterval)
   }
 
   protected override def afterAll(): Unit = {
-    testUtils.deleteLogStore(logstore)
+    val it = logstores.iterator
+    while (it.hasNext) {
+      testUtils.deleteLogStore(it.next())
+    }
   }
 }

@@ -29,41 +29,44 @@ import org.apache.spark.internal.Logging
 import scala.collection.JavaConversions._
 
 
-class ZkHelper(zkParams: Map[String, String],
-               checkpointDir: String,
-               project: String,
-               logstore: String) extends Logging {
+class ZkClientHolder(zkParams: Map[String, String]) {
+  @transient private var zkClient: ZkClient = _
+
+  def get(): ZkClient = synchronized {
+    if (zkClient == null) {
+      val zkConnect = zkParams.getOrElse("zookeeper.connect", "localhost:2181")
+      val zkSessionTimeoutMs = zkParams.getOrElse("zookeeper.session.timeout.ms", "6000").toInt
+      val zkConnectionTimeoutMs =
+        zkParams.getOrElse("zookeeper.connection.timeout.ms", zkSessionTimeoutMs.toString).toInt
+      zkClient = new ZkClient(zkConnect, zkSessionTimeoutMs, zkConnectionTimeoutMs)
+      zkClient.setZkSerializer(new ZkSerializer() {
+        override def serialize(data: scala.Any): Array[Byte] = {
+          data.asInstanceOf[String].getBytes(StandardCharsets.UTF_8)
+        }
+
+        override def deserialize(bytes: Array[Byte]): AnyRef = {
+          if (bytes == null) {
+            return null
+          }
+          new String(bytes, StandardCharsets.UTF_8)
+        }
+      })
+    }
+    zkClient
+  }
+}
+
+class ZkClientWrapper(@transient zkClient: ZkClient,
+                      checkpointDir: String,
+                      project: String,
+                      logstore: String) extends Logging {
 
   private val zkDir = s"$checkpointDir/commit/$project/$logstore"
   private val offsetDir = s"$zkDir/offset"
   private val lockDir = s"$zkDir/lock"
   private val rddRangeDir = s"$zkDir/rdd"
 
-  @transient private var zkClient: ZkClient = _
   @transient private val latestOffsets: util.Map[Int, String] = new java.util.concurrent.ConcurrentHashMap[Int, String]()
-
-  def initialize(): Unit = synchronized {
-    if (zkClient != null) {
-      return
-    }
-    val zkConnect = zkParams.getOrElse("zookeeper.connect", "localhost:2181")
-    val zkSessionTimeoutMs = zkParams.getOrElse("zookeeper.session.timeout.ms", "6000").toInt
-    val zkConnectionTimeoutMs =
-      zkParams.getOrElse("zookeeper.connection.timeout.ms", zkSessionTimeoutMs.toString).toInt
-    zkClient = new ZkClient(zkConnect, zkSessionTimeoutMs, zkConnectionTimeoutMs)
-    zkClient.setZkSerializer(new ZkSerializer() {
-      override def serialize(data: scala.Any): Array[Byte] = {
-        data.asInstanceOf[String].getBytes(StandardCharsets.UTF_8)
-      }
-
-      override def deserialize(bytes: Array[Byte]): AnyRef = {
-        if (bytes == null) {
-          return null
-        }
-        new String(bytes, StandardCharsets.UTF_8)
-      }
-    })
-  }
 
   def markOffset(shard: Int, cursor: String): Unit = synchronized {
     latestOffsets.put(shard, cursor)
@@ -100,7 +103,6 @@ class ZkHelper(zkParams: Map[String, String],
   }
 
   def mkdir(): Unit = {
-    initialize()
     try {
       ensureDirExistsAndEmpty(offsetDir)
       ensureDirExistsAndEmpty(rddRangeDir)
@@ -113,19 +115,16 @@ class ZkHelper(zkParams: Map[String, String],
   }
 
   def cleanupRDD(rddID: Int, shard: Int): Unit = {
-    initialize()
     deleteIfExists(s"$rddRangeDir/$shard/$rddID")
   }
 
   def readEndOffset(rddID: Int, shardId: Int): String = {
-    initialize()
     // TODO Wait data exists
     val path = s"$rddRangeDir/$shardId/$rddID"
     zkClient.readData(path, true)
   }
 
   def tryMarkEndOffset(rddID: Int, shardId: Int, cursor: String): Boolean = {
-    initialize()
     val path = s"$rddRangeDir/$shardId/$rddID"
     if (zkClient.exists(path)) {
       false
@@ -144,19 +143,16 @@ class ZkHelper(zkParams: Map[String, String],
   }
 
   def readOffset(shardId: Int): String = {
-    initialize()
     zkClient.readData(s"$offsetDir/$shardId", true)
   }
 
   def saveOffset(shard: Int, cursor: String): Unit = {
-    initialize()
     val path = s"$offsetDir/$shard"
     logDebug(s"Save $cursor to $path")
     writeData(path, cursor)
   }
 
   def tryLock(shard: Int, timeout: Long): Boolean = {
-    initialize()
     val lockFile = s"$lockDir/$shard"
     val expiredAt = Instant.now().getEpochSecond + timeout
     val data = String.valueOf(expiredAt)
@@ -183,41 +179,42 @@ class ZkHelper(zkParams: Map[String, String],
   }
 
   def unlock(shard: Int): Unit = {
-    initialize()
     deleteIfExists(s"$lockDir/$shard")
   }
 
   def close(): Unit = synchronized {
     if (zkClient != null) {
       zkClient.close()
-      zkClient = null
     }
   }
 }
 
-object ZkHelper extends Logging {
+object ZkClientWrapper extends Logging {
 
   private case class CacheKey(zkParams: Map[String, String],
                               checkpointDir: String,
                               project: String,
                               logstore: String)
 
-  private var cache: util.HashMap[CacheKey, ZkHelper] = _
+  private var cache: util.HashMap[CacheKey, ZkClientWrapper] = _
+  private var zkClientHolder: ZkClientHolder = _
 
   def getOrCreate(zkParams: Map[String, String],
                   checkpointDir: String,
                   project: String,
-                  logstore: String): ZkHelper = synchronized {
+                  logstore: String): ZkClientWrapper = synchronized {
     if (cache == null) {
-      cache = new util.HashMap[CacheKey, ZkHelper]()
+      cache = new util.HashMap[CacheKey, ZkClientWrapper]()
+    }
+    if (zkClientHolder == null) {
+      zkClientHolder = new ZkClientHolder(zkParams)
     }
     val k = CacheKey(zkParams, checkpointDir, project, logstore)
-    var zkHelper = cache.get(k)
-    if (zkHelper == null) {
-      zkHelper = new ZkHelper(zkParams, checkpointDir, project, logstore)
-      zkHelper.initialize()
-      cache.put(k, zkHelper)
+    var zkClientWrapper = cache.get(k)
+    if (zkClientWrapper == null) {
+      zkClientWrapper = new ZkClientWrapper(zkClientHolder.get(), checkpointDir, project, logstore)
+      cache.put(k, zkClientWrapper)
     }
-    zkHelper
+    zkClientWrapper
   }
 }

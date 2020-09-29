@@ -36,13 +36,13 @@ class LoghubRDD(@transient sc: SparkContext,
   extends RDD[String](sc, Nil) with Logging with HasOffsetRanges {
 
   @transient var client: LoghubClientAgent = _
-  @transient var zkHelpers: mutable.Map[String, ZkHelper] = _
+  @transient var zkClients: mutable.Map[String, ZkClientWrapper] = _
 
   private def initialize(): Unit = {
-    zkHelpers = new mutable.HashMap[String, ZkHelper]()
+    zkClients = new mutable.HashMap[String, ZkClientWrapper]()
     offsets.foreach(r => {
-      val zkClient = ZkHelper.getOrCreate(zkParams, checkpointDir, project, r.logstore)
-      zkHelpers.put(r.logstore, zkClient)
+      val zkClient = ZkClientWrapper.getOrCreate(zkParams, checkpointDir, project, r.logstore)
+      zkClients.put(r.logstore, zkClient)
     })
     client = LoghubClient.getOrCreate(endpoint, accessKeyId, accessKeySecret, consumerGroup)
   }
@@ -54,14 +54,14 @@ class LoghubRDD(@transient sc: SparkContext,
 
   def offsetRanges: Array[OffsetRange] = {
     // Hack RDD id here
-    offsets.map(r => OffsetRange(id, r.shardId, r.fromCursor, r.untilCursor))
+    offsets.map(r => OffsetRange(id, r.logstore, r.shardId, r.fromCursor, r.untilCursor))
   }
 
   @DeveloperApi
   override def compute(split: Partition, context: TaskContext): Iterator[String] = {
     initialize()
     val partition = split.asInstanceOf[ShardPartition]
-    val zkClient = zkHelpers(partition.logstore)
+    val zkClient = zkClients(partition.logstore)
     val iter = new LoghubIterator(id, zkClient, client, partition, context)
     new InterruptibleIterator[String](context, iter)
   }
