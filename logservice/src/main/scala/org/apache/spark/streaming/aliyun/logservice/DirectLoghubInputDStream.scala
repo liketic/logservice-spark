@@ -57,9 +57,10 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
   private val initialRate = context.sparkContext.getConf.getLong(
     "spark.streaming.backpressure.initialRate", 0)
   private val maxRate = _ssc.sparkContext.getConf.getInt("spark.streaming.loghub.maxRatePerShard", 10000)
+  private val lockTimeoutInSec = _ssc.sparkContext.getConf.getInt("spark.streaming.loghub.lockTimeoutInSec", 3600)
 
   private var checkpointDir: String = _
-  private val readOnlyShardCache = new mutable.HashMap[Int, String]()
+  private val readOnlyShardCache = new mutable.HashMap[String, String]()
   private val readOnlyShardEndCursorCache = new mutable.HashMap[String, String]()
 
   override def start(): Unit = {
@@ -153,20 +154,19 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
   override def compute(validTime: Time): Option[RDD[String]] = {
     initialize()
     val shardOffsets = new ArrayBuffer[InternalOffsetRange]()
-    // Ten durations or 1 second
-    val lockTimeoutSec = Math.max(ssc.graph.batchDuration.milliseconds / 10, 1)
-
     zkHelpers.foreach(it => {
       val logstore = it._1
       val zkClient = it._2
       loghubClient.ListShard(project, logstore).GetShards().foreach(shard => {
         val shardId = shard.GetShardId()
-        if (readOnlyShardCache.contains(shardId)) {
-          logInfo(s"There is no data to consume from shard $shardId.")
-        } else if (zkClient.tryLock(shardId, lockTimeoutSec)) {
+        val key = logstore + "#" + shardId
+        if (readOnlyShardCache.contains(key)) {
+          logInfo(s"No more data in logstore $logstore shard $shardId.")
+        } else if (zkClient.tryLock(shardId, lockTimeoutInSec)) {
           var start = zkClient.readOffset(shardId)
           if (start == null || start.isEmpty) {
             // this is the first fetching of this shard
+            logInfo(s"Initialize cursor logstore $logstore shard $shardId")
             start = fetchCheckpointOrInitialCursor(logstore, shardId)
           }
           var end: String = null
@@ -174,8 +174,8 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
           if (shard.getStatus.equalsIgnoreCase("readonly")) {
             end = endCursorForReadOnlyShard(logstore, shardId)
             if (start.equals(end)) {
-              logInfo(s"Skip empty $shardId end cursor $start")
-              readOnlyShardCache.put(shardId, end)
+              logInfo(s"Skip empty $shardId logstore $logstore end cursor $start")
+              readOnlyShardCache.put(key, end)
               skip = true
             }
           }
@@ -203,7 +203,7 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
       checkpointDir).setName(s"LoghubRDD-${validTime.toString()}")
     val description = shardOffsets.map { p =>
       val offset = "offset: [ %1$-30s to %2$-30s ]".format(p.fromCursor, p.untilCursor)
-      s"shardId: ${p.shardId}\t $offset"
+      s"logstore: ${p.logstore} shardId: ${p.shardId}\t $offset"
     }.mkString("\n")
     val metadata = Map(StreamInputInfo.METADATA_KEY_DESCRIPTION -> description)
     if (storageLevel != StorageLevel.NONE) {
