@@ -181,7 +181,7 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
           }
           if (!skip && zkClient.checkOffsetAfterPrevious(shardId, start)) {
             shardOffsets.add(InternalOffsetRange(logstore, shardId, start, end))
-            logInfo(s"Shard $shardId start from $start")
+            logInfo(s"Shard $shardId of logstore $logstore start from $start")
             zkClient.markOffset(shardId, start)
           } else {
             zkClient.unlock(shardId)
