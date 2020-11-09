@@ -53,11 +53,13 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
   extends InputDStream[String](_ssc) with Logging with CanCommitOffsets {
   @transient private var loghubClient: LoghubClientAgent = _
   @transient private var zkHelpers: mutable.Map[String, ZkClientWrapper] = _
+  @transient private var loghubCache: LoghubCache = _
 
   private val initialRate = context.sparkContext.getConf.getLong(
     "spark.streaming.backpressure.initialRate", 0)
   private val maxRate = _ssc.sparkContext.getConf.getInt("spark.streaming.loghub.maxRatePerShard", 10000)
   private val lockTimeoutInSec = _ssc.sparkContext.getConf.getInt("spark.streaming.loghub.lockTimeoutInSec", 3600)
+  private val cacheInSec = _ssc.sparkContext.getConf.getInt("spark.streaming.loghub.cacheInSec", 60)
 
   private var checkpointDir: String = _
   private val readOnlyShardCache = new mutable.HashMap[String, String]()
@@ -67,8 +69,7 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
     var zkCheckpointDir = ssc.checkpointDir
     if (StringUtils.isBlank(zkCheckpointDir)) {
       zkCheckpointDir = s"/$consumerGroup"
-      logInfo(s"Checkpoint dir was not specified, using consumer group $consumerGroup as " +
-        s"checkpoint dir")
+      logInfo(s"Checkpoint dir was not specified, using $consumerGroup")
     }
     checkpointDir = new Path(zkCheckpointDir).toUri.getPath
     initialize()
@@ -81,13 +82,16 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
         accessKeySecret,
         consumerGroup)
     }
+    if (loghubCache == null) {
+      loghubCache = new LoghubCache(loghubClient, cacheInSec * 1000L)
+    }
     if (zkHelpers == null) {
       zkHelpers = new mutable.HashMap[String, ZkClientWrapper]()
       logstores.foreach(logstore => {
         val zkHelper = ZkClientWrapper.getOrCreate(zkParams, checkpointDir, project, logstore)
         zkHelper.mkdir()
         val checkpoints = createConsumerGroupOrGetCheckpoint(logstore)
-        loghubClient.ListShard(project, logstore).GetShards().foreach(r => {
+        loghubCache.listShard(project, logstore).foreach(r => {
           val shardId = r.GetShardId()
           val offset = findCheckpointOrCursorForShard(logstore, shardId, checkpoints)
           zkHelper.saveOffset(shardId, offset)
@@ -154,19 +158,19 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
   override def compute(validTime: Time): Option[RDD[String]] = {
     initialize()
     val shardOffsets = new ArrayBuffer[InternalOffsetRange]()
-    zkHelpers.foreach(it => {
-      val logstore = it._1
-      val zkClient = it._2
-      loghubClient.ListShard(project, logstore).GetShards().foreach(shard => {
+    logInfo(s"Start new batch for ${logstores.size()} logstores")
+    logstores.foreach(logstore => {
+      val zkClient = zkHelpers(logstore)
+      loghubCache.listShard(project, logstore).foreach(shard => {
         val shardId = shard.GetShardId()
         val key = logstore + "#" + shardId
         if (readOnlyShardCache.contains(key)) {
-          logInfo(s"No more data in logstore $logstore shard $shardId.")
+          logInfo(s"No more data in $logstore - $shardId")
         } else if (zkClient.tryLock(shardId, lockTimeoutInSec)) {
           var start = zkClient.readOffset(shardId)
           if (start == null || start.isEmpty) {
             // this is the first fetching of this shard
-            logInfo(s"Initialize cursor logstore $logstore shard $shardId")
+            logInfo(s"Initialize cursor $logstore - $shardId")
             start = fetchCheckpointOrInitialCursor(logstore, shardId)
           }
           var end: String = null
@@ -189,6 +193,9 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
         }
       })
     })
+    if (shardOffsets.isEmpty) {
+      logWarning("No shard available in this batch.")
+    }
 
     val rdd = new LoghubRDD(
       ssc.sc,
