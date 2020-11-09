@@ -239,7 +239,7 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
     offsetRanges.foreach(r => {
       pool.submit(new Runnable {
         override def run(): Unit = {
-          val zkClient = zkHelpers(r.logstore)
+          val zkClient = zkClientCache(r.logstore)
           var end = zkClient.readEndOffset(r.rddID, r.shardId)
           if (end == null) {
             // TODO Double check this
