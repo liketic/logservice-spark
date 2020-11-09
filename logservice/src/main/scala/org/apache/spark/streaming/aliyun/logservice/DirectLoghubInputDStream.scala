@@ -52,7 +52,7 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
                                cursorStartTime: Long = -1L)
   extends InputDStream[String](_ssc) with Logging with CanCommitOffsets {
   @transient private var loghubClient: LoghubClientAgent = _
-  @transient private var zkHelpers: mutable.Map[String, ZkClientWrapper] = _
+  @transient private var zkClientCache: mutable.Map[String, ZkClientWrapper] = _
   @transient private var loghubCache: LoghubCache = _
 
   private val initialRate = context.sparkContext.getConf.getLong(
@@ -85,18 +85,18 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
     if (loghubCache == null) {
       loghubCache = new LoghubCache(loghubClient, cacheInSec * 1000L)
     }
-    if (zkHelpers == null) {
-      zkHelpers = new mutable.HashMap[String, ZkClientWrapper]()
+    if (zkClientCache == null || zkClientCache.isEmpty) {
+      zkClientCache = new mutable.HashMap[String, ZkClientWrapper]()
       logstores.foreach(logstore => {
-        val zkHelper = ZkClientWrapper.getOrCreate(zkParams, checkpointDir, project, logstore)
-        zkHelper.mkdir()
+        val zkClient = ZkClientWrapper.getOrCreate(zkParams, checkpointDir, project, logstore)
+        zkClient.mkdir()
         val checkpoints = createConsumerGroupOrGetCheckpoint(logstore)
         loghubCache.listShard(project, logstore).foreach(r => {
           val shardId = r.GetShardId()
           val offset = findCheckpointOrCursorForShard(logstore, shardId, checkpoints)
-          zkHelper.saveOffset(shardId, offset)
+          zkClient.saveOffset(shardId, offset)
         })
-        zkHelpers.put(logstore, zkHelper)
+        zkClientCache.put(logstore, zkClient)
       })
     }
   }
@@ -106,11 +106,12 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
   }
 
   override def stop(): Unit = this.synchronized {
-    if (zkHelpers != null) {
-      zkHelpers.foreach(it => {
+    logWarning("Stopping direct stream")
+    if (zkClientCache != null) {
+      zkClientCache.foreach(it => {
         it._2.close()
       })
-      zkHelpers = null
+      zkClientCache = null
     }
     if (pool != null) {
       ThreadUtils.shutdown(pool)
@@ -160,7 +161,7 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
     val shardOffsets = new ArrayBuffer[InternalOffsetRange]()
     logInfo(s"Start new batch for ${logstores.size()} logstores")
     logstores.foreach(logstore => {
-      val zkClient = zkHelpers(logstore)
+      val zkClient = zkClientCache(logstore)
       loghubCache.listShard(project, logstore).foreach(shard => {
         val shardId = shard.GetShardId()
         val key = logstore + "#" + shardId
