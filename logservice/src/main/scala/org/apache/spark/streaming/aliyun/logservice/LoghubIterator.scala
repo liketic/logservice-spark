@@ -27,7 +27,7 @@ import org.apache.spark.util.NextIterator
 import scala.collection.JavaConversions._
 
 class LoghubIterator(rddID: Int,
-                     zkHelper: ZkHelper,
+                     zkClient: ZkClientWrapper,
                      client: LoghubClientAgent,
                      part: ShardPartition,
                      context: TaskContext)
@@ -49,7 +49,7 @@ class LoghubIterator(rddID: Int,
 
   private def unlock(): Unit = {
     if (!unlocked) {
-      zkHelper.unlock(shardId)
+      zkClient.unlock(shardId)
       logDebug(s"unlock shard $shardId")
       unlocked = true
     }
@@ -63,8 +63,8 @@ class LoghubIterator(rddID: Int,
     }
     if (buffer.isEmpty) {
       finished = true
-      if (zkHelper.tryMarkEndOffset(rddID, shardId, cursor)) {
-        zkHelper.saveOffset(shardId, cursor)
+      if (zkClient.tryMarkEndOffset(rddID, shardId, cursor)) {
+        zkClient.saveOffset(shardId, cursor)
       }
       unlock()
       null
@@ -88,7 +88,7 @@ class LoghubIterator(rddID: Int,
   private def fetchEndCursor(): Unit = {
     if (!isFetchEndCursorCalled) {
       // try to fetch end cursor of this shard in current RDD
-      endCursor = zkHelper.readEndOffset(rddID, shardId)
+      endCursor = zkClient.readEndOffset(rddID, shardId)
       isFetchEndCursorCalled = true
     }
   }

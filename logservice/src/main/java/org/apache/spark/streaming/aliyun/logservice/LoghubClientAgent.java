@@ -54,7 +54,9 @@ public class LoghubClientAgent {
         return RetryUtil.call(() -> client.GetCursor(project, logStream, shardId, mode));
     }
 
-    public boolean safeUpdateCheckpoint(String project, String logstore, String consumerGroup,
+    public boolean safeUpdateCheckpoint(String project,
+                                        String logstore,
+                                        String consumerGroup,
                                         int shard, String checkpoint) {
         try {
             client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
