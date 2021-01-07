@@ -56,6 +56,8 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
   private val initialRate = context.sparkContext.getConf.getLong(
     "spark.streaming.backpressure.initialRate", 0)
   private val maxRate = _ssc.sparkContext.getConf.getInt("spark.streaming.loghub.maxRatePerShard", 10000)
+  // Cache 5 minutes by default
+  private val shardCacheTimeout = _ssc.sparkContext.getConf.getInt("spark.streaming.loghub.shardCacheTimeout", 300 * 1000)
 
   private var checkpointDir: String = _
   private val readOnlyShardCache = new mutable.HashMap[Int, String]()
@@ -146,7 +148,7 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
     val shardOffsets = new ArrayBuffer[InternalOffsetRange]()
     // Ten durations or 1 second
     val lockTimeoutSec = Math.max(ssc.graph.batchDuration.milliseconds / 100, 1)
-    loghubClient.ListShard(project, logstore).GetShards().foreach(shard => {
+    loghubClient.listShardWithCache(project, logstore, shardCacheTimeout).GetShards().foreach(shard => {
       val shardId = shard.GetShardId()
       if (readOnlyShardCache.contains(shardId)) {
         logInfo(s"There is no data to consume from shard $shardId.")
