@@ -78,9 +78,17 @@ public class CheckpointManager implements Serializable {
         }
         LOG.info("Cleaning up RDD cache..");
         for (OffsetRange item : offsetRanges) {
-            executorService.submit(() -> zkHelper.cleanupRDD(item.rddID(), item.shardId()));
+            executorService.submit(() -> deleteRDDSafe(item.rddID(), item.shardId()));
         }
         LOG.info("Cleaning up RDD cache succeed!");
+    }
+
+    private void deleteRDDSafe(int id, int shardId) {
+        try {
+            zkHelper.cleanupRDD(id, shardId);
+        } catch (Exception ex) {
+            LOG.error("Error while deleting RDD file", ex);
+        }
     }
 
     private void commitAll() {
