@@ -16,9 +16,6 @@
  */
 package org.apache.spark.streaming.aliyun.logservice
 
-import java.util.concurrent.ThreadPoolExecutor
-import java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy
-
 import com.aliyun.openservices.log.common.Consts.CursorMode
 import com.aliyun.openservices.log.common.ConsumerGroup
 import com.aliyun.openservices.log.exception.LogException
@@ -33,7 +30,6 @@ import org.apache.spark.streaming.dstream.{DStreamCheckpointData, InputDStream}
 import org.apache.spark.streaming.scheduler.rate.RateEstimator
 import org.apache.spark.streaming.scheduler.{RateController, StreamInputInfo}
 import org.apache.spark.streaming.{StreamingContext, Time}
-import org.apache.spark.util.ThreadUtils
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable
@@ -52,16 +48,20 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
   extends InputDStream[String](_ssc) with Logging with CanCommitOffsets {
   @transient private var zkHelper: ZkHelper = _
   @transient private var loghubClient: LoghubClientAgent = _
+  @transient private var checkpointMgr: CheckpointManager = _
 
   private val initialRate = context.sparkContext.getConf.getLong(
     "spark.streaming.backpressure.initialRate", 0)
   private val maxRate = _ssc.sparkContext.getConf.getInt("spark.streaming.loghub.maxRatePerShard", 10000)
   // Cache 5 minutes by default
   private val shardCacheTimeout = _ssc.sparkContext.getConf.getInt("spark.streaming.loghub.shardCacheTimeout", 300 * 1000)
+  // commit checkpoint interval
+  private val checkpointCommitInterval = _ssc.sparkContext.getConf.getInt("spark.streaming.loghub.checkpointCommitInterval", 60 * 1000)
 
   private var checkpointDir: String = _
-  private val readOnlyShardCache = new mutable.HashMap[Int, String]()
+  private val noMoreDataShardCache = new mutable.HashMap[Int, String]()
   private val readOnlyShardEndCursorCache = new mutable.HashMap[Int, String]()
+  private val currentOffsets = new mutable.HashMap[Int, String]()
 
   override def start(): Unit = {
     var zkCheckpointDir = ssc.checkpointDir
@@ -85,7 +85,7 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
       zkHelper = ZkHelper.getOrCreate(zkParams, checkpointDir, project, logstore)
       zkHelper.mkdir()
       val checkpoints = createConsumerGroupOrGetCheckpoint()
-      loghubClient.ListShard(project, logstore).GetShards().foreach(r => {
+      loghubClient.listShardWithCache(project, logstore, shardCacheTimeout).GetShards().foreach(r => {
         val shardId = r.GetShardId()
         val offset = findCheckpointOrCursorForShard(shardId, checkpoints)
         zkHelper.saveOffset(shardId, offset)
@@ -102,8 +102,9 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
       zkHelper.close()
       zkHelper = null
     }
-    if (pool != null) {
-      ThreadUtils.shutdown(pool)
+    if (checkpointMgr != null) {
+      checkpointMgr.close()
+      checkpointMgr = null
     }
   }
 
@@ -143,14 +144,25 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
     endCursor
   }
 
+  def checkCursorNotRollback(shard: Int, cursor: String): Boolean = {
+    val previous = currentOffsets.getOrElse(shard, null)
+    if (previous != null && ShardUtils.checkCursorLessThan(cursor, previous)) {
+      logError(s"Previous cursor $previous " +
+        s"has been rollback to $cursor")
+      return false
+    }
+    true
+  }
+
   override def compute(validTime: Time): Option[RDD[String]] = {
+    val beginTime = System.currentTimeMillis()
     initialize()
     val shardOffsets = new ArrayBuffer[InternalOffsetRange]()
     // Ten durations or 1 second
     val lockTimeoutSec = Math.max(ssc.graph.batchDuration.milliseconds / 100, 1)
     loghubClient.listShardWithCache(project, logstore, shardCacheTimeout).GetShards().foreach(shard => {
       val shardId = shard.GetShardId()
-      if (readOnlyShardCache.contains(shardId)) {
+      if (noMoreDataShardCache.contains(shardId)) {
         logInfo(s"There is no data to consume from shard $shardId.")
       } else if (zkHelper.tryLock(shardId, lockTimeoutSec)) {
         var start = zkHelper.readOffset(shardId)
@@ -164,14 +176,14 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
           end = endCursorForReadOnlyShard(shardId)
           if (start.equals(end)) {
             logInfo(s"Skip empty $shardId end cursor $start")
-            readOnlyShardCache.put(shardId, end)
+            noMoreDataShardCache.put(shardId, end)
             skip = true
           }
         }
-        if (!skip && zkHelper.checkOffsetAfterPrevious(shardId, start)) {
+        if (!skip && checkCursorNotRollback(shardId, start)) {
           shardOffsets.add(InternalOffsetRange(shardId, start, end))
           logInfo(s"Shard $shardId start from $start")
-          zkHelper.markOffset(shardId, start)
+          currentOffsets.put(shardId, start)
         } else {
           zkHelper.unlock(shardId)
         }
@@ -200,35 +212,32 @@ class DirectLoghubInputDStream(_ssc: StreamingContext,
       rdd.persist(storageLevel)
       logDebug(s"Persisting RDD ${rdd.id} for time $validTime to $storageLevel")
     }
+    val timeBeforeCount = System.currentTimeMillis()
     val inputInfo = StreamInputInfo(id, rdd.count(), metadata)
+    val now = System.currentTimeMillis()
+    logInfo(s"Call compute cost ${now - beginTime}, count cost ${now - timeBeforeCount}")
     ssc.scheduler.inputInfoTracker.reportInfo(validTime, inputInfo)
     Some(rdd)
   }
-
-  @transient protected var pool: ThreadPoolExecutor = _
 
   /**
    * Commit the offsets to LogService at a future time. Threadsafe.
    * Users should call this method at end of each output operation.
    */
   override def commitAsync(offsetRanges: Array[OffsetRange]): Unit = {
-    if (pool == null) {
-      pool = ThreadUtils.newDaemonCachedThreadPool("commit-pool", 16)
-      pool.setRejectedExecutionHandler(new CallerRunsPolicy())
+    if (checkpointMgr == null) {
+      initialize()
+      checkpointMgr = new CheckpointManager(project, logstore, consumerGroup,
+        loghubClient,
+        checkpointCommitInterval,
+        zkHelper)
+      checkpointMgr.start()
     }
-    offsetRanges.foreach(r => {
-      pool.submit(new Runnable {
-        override def run(): Unit = {
-          var end = zkHelper.readEndOffset(r.rddID, r.shardId)
-          if (end == null) {
-            // TODO Double check this
-            end = r.fromCursor
-          }
-          loghubClient.safeUpdateCheckpoint(project, logstore, consumerGroup, r.shardId, end)
-          zkHelper.cleanupRDD(r.rddID, r.shardId)
-        }
-      })
-    })
+    if (offsetRanges != null) {
+      // commit begin cursor of previous batch
+      import scala.collection.JavaConverters._
+      checkpointMgr.commit(offsetRanges.toList.asJava)
+    }
   }
 
   private[streaming] override def name: String = s"Loghub direct stream [$id]"

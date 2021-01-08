@@ -56,7 +56,7 @@ class LoghubRDD(@transient sc: SparkContext,
   override def compute(split: Partition, context: TaskContext): Iterator[String] = {
     initialize()
     val partition = split.asInstanceOf[ShardPartition]
-    val iter = new LoghubIterator(id, zkHelper, client, partition, context)
+    val iter = new LoghubIterator(zkHelper, client, partition, context)
     new InterruptibleIterator[String](context, iter)
   }
 

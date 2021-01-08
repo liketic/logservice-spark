@@ -19,7 +19,6 @@ package org.apache.spark.streaming.aliyun.logservice
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util
-import java.util.Base64
 
 import org.I0Itec.zkclient.ZkClient
 import org.I0Itec.zkclient.exception.ZkNodeExistsException
@@ -40,7 +39,6 @@ class ZkHelper(zkParams: Map[String, String],
   private val rddRangeDir = s"$zkDir/rdd"
 
   @transient private var zkClient: ZkClient = _
-  @transient private val latestOffsets: util.Map[Int, String] = new java.util.concurrent.ConcurrentHashMap[Int, String]()
 
   def initialize(): Unit = synchronized {
     if (zkClient != null) {
@@ -63,30 +61,6 @@ class ZkHelper(zkParams: Map[String, String],
         new String(bytes, StandardCharsets.UTF_8)
       }
     })
-  }
-
-  def markOffset(shard: Int, cursor: String): Unit = synchronized {
-    latestOffsets.put(shard, cursor)
-  }
-
-  private def decideCursorToTs(cursor: String): Long = {
-    val bytes = Base64.getDecoder.decode(cursor.getBytes(StandardCharsets.UTF_8))
-    new String(bytes, StandardCharsets.UTF_8).toLong
-  }
-
-  def checkOffsetAfterPrevious(shard: Int, cursor: String): Boolean = {
-    val prev = latestOffsets.get(shard)
-    if (prev == null) {
-      return true
-    }
-    val pts = decideCursorToTs(prev)
-    val cts = decideCursorToTs(cursor)
-    if (cts >= pts) {
-      // maybe previous fetch returned nothing
-      return true
-    }
-    logWarning(s"invalid cursor $cursor, prev $prev")
-    false
   }
 
   def ensureDirExistsAndEmpty(dir: String): Unit = {

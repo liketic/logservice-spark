@@ -26,8 +26,7 @@ import org.apache.spark.util.NextIterator
 
 import scala.collection.JavaConversions._
 
-class LoghubIterator(rddID: Int,
-                     zkHelper: ZkHelper,
+class LoghubIterator(zkHelper: ZkHelper,
                      client: LoghubClientAgent,
                      part: ShardPartition,
                      context: TaskContext)
@@ -42,7 +41,6 @@ class LoghubIterator(rddID: Int,
   private var hasNextBatch = true
   private var unlocked = false
   private var isFetchEndCursorCalled = false
-
   private val inputMetrics = context.taskMetrics.inputMetrics
 
   context.addTaskCompletionListener { _ => closeIfNeeded() }
@@ -63,7 +61,7 @@ class LoghubIterator(rddID: Int,
     }
     if (buffer.isEmpty) {
       finished = true
-      if (zkHelper.tryMarkEndOffset(rddID, shardId, cursor)) {
+      if (zkHelper.tryMarkEndOffset(part.rddId, shardId, cursor)) {
         zkHelper.saveOffset(shardId, cursor)
       }
       unlock()
@@ -75,20 +73,21 @@ class LoghubIterator(rddID: Int,
   }
 
   override def close() {
+    logInfo(s"Read $hasRead records from shard $shardId in RDD ${part.rddId}, cursor = ${cursor}")
     try {
       unlock()
       inputMetrics.incBytesRead(hasRead)
       buffer.clear()
       buffer = null
     } catch {
-      case e: Exception => logWarning("Exception when close LoghubIterator.", e)
+      case e: Exception => logWarning("Exception while closing iterator.", e)
     }
   }
 
   private def fetchEndCursor(): Unit = {
     if (!isFetchEndCursorCalled) {
       // try to fetch end cursor of this shard in current RDD
-      endCursor = zkHelper.readEndOffset(rddID, shardId)
+      endCursor = zkHelper.readEndOffset(part.rddId, shardId)
       isFetchEndCursorCalled = true
     }
   }
@@ -127,6 +126,9 @@ class LoghubIterator(rddID: Int,
         buffer.offer(obj.toJSONString)
       }
     })
+    if (count == 0) {
+      logWarning(s"No data returned from cursor $cursor in shard $shardId")
+    }
     val nextCursor = r.GetNextCursor()
     if (log.isDebugEnabled) {
       logDebug(s"shardId: $shardId, currentCursor: $cursor, nextCursor: $nextCursor," +
