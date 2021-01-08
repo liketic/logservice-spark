@@ -31,10 +31,20 @@ import com.aliyun.openservices.log.response.ListShardResponse;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class LoghubClientAgent {
     private static final Log LOG = LogFactory.getLog(LoghubClientAgent.class);
 
     private Client client;
+
+    private static class CacheItem<T> {
+        T data;
+        long expireTime;
+    }
+
+    private Map<String, CacheItem<ListShardResponse>> shardCache;
 
     public LoghubClientAgent(String endpoint, String accessId, String accessKey) {
         this.client = new Client(endpoint, accessId, accessKey);
@@ -42,6 +52,35 @@ public class LoghubClientAgent {
 
     public void setUserAgent(String userAgent) {
         client.setUserAgent(userAgent);
+    }
+
+    private ListShardResponse getShardsFromCache(String logstore) {
+        CacheItem<ListShardResponse> cacheItem = shardCache.get(logstore);
+        if (cacheItem == null) {
+            return null;
+        }
+        if (cacheItem.expireTime < System.currentTimeMillis()) {
+            return null;
+        }
+        return cacheItem.data;
+    }
+
+    public ListShardResponse listShardWithCache(String project, String logstore, long timeout) throws Exception {
+        if (shardCache == null) {
+            this.shardCache = new HashMap<>();
+        } else {
+            ListShardResponse response = getShardsFromCache(logstore);
+            if (response != null) {
+                LOG.info("Shard cache hit, project " + project + ", logstore " + logstore);
+                return response;
+            }
+        }
+        ListShardResponse response = ListShard(project, logstore);
+        CacheItem<ListShardResponse> item = new CacheItem<>();
+        item.data = response;
+        item.expireTime = System.currentTimeMillis() + timeout;
+        shardCache.put(logstore, item);
+        return response;
     }
 
     public ListShardResponse ListShard(String logProject, String logstore)
@@ -77,11 +116,11 @@ public class LoghubClientAgent {
     public String fetchCheckpoint(String project, String logstore, String consumerGroup, int shard)
             throws Exception {
         return RetryUtil.call(() -> {
-           ConsumerGroupCheckPointResponse response = client.GetCheckPoint(project, logstore, consumerGroup, shard);
-           if (response != null && !response.getCheckPoints().isEmpty()) {
-               return response.getCheckPoints().get(0).getCheckPoint();
-           }
-           return null;
+            ConsumerGroupCheckPointResponse response = client.GetCheckPoint(project, logstore, consumerGroup, shard);
+            if (response != null && !response.getCheckPoints().isEmpty()) {
+                return response.getCheckPoints().get(0).getCheckPoint();
+            }
+            return null;
         });
     }
 
