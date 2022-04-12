@@ -37,7 +37,7 @@
         <loghub.client.version>0.6.15</loghub.client.version>
         <aliyun.log.version>0.6.37</aliyun.log.version>
         <aliyun.log.producer.version>0.3.5</aliyun.log.producer.version>
-        <hadoop.version>2.9.0</hadoop.version>
+        <hadoop.version>3.2.3</hadoop.version>
         <fastjson.version>1.2.45</fastjson.version>
         <guava.version>14.0.1</guava.version>
         <scalatest.version>3.0.3</scalatest.version>
